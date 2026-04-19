@@ -32,9 +32,9 @@ export default function Sidebar({ mobileOpen, onClose, onSignOut, user }) {
         `}
       >
         <div className="px-6 pt-7 pb-6 border-b border-border">
-          <div className="text-[11px] uppercase tracking-widest text-text-secondary">Banj FM</div>
-          <div className="text-lg font-semibold mt-1 leading-tight">Command Center</div>
-          <div className="text-[11px] text-text-secondary mt-1">Personal brand ops</div>
+          <div className="text-[11px] uppercase tracking-widest text-text-secondary">Roodjino Chérilus</div>
+          <div className="text-lg font-semibold mt-1 leading-tight">Personal Brand</div>
+          <div className="text-[11px] text-text-secondary mt-1">Command center</div>
         </div>
         <nav className="flex-1 py-4 px-3 overflow-y-auto">
           {NAV.map((item) => (

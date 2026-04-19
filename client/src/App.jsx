@@ -62,7 +62,7 @@ export default function App() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <div className="text-sm font-semibold">Command Center</div>
+          <div className="text-sm font-semibold">Personal Brand</div>
         </header>
         <div className="max-w-content mx-auto px-4 md:px-8 py-6 md:py-8">
           <Routes>

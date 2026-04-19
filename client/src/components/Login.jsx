@@ -24,9 +24,9 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-bg text-text-primary p-6">
       <div className="max-w-sm w-full space-y-6 text-center">
         <div>
-          <div className="text-[11px] uppercase tracking-widest text-text-secondary">Banj FM</div>
-          <h1 className="text-2xl font-semibold mt-1">Command Center</h1>
-          <p className="text-text-secondary text-sm mt-3">Sign in with Google to access the dashboard.</p>
+          <div className="text-[11px] uppercase tracking-widest text-text-secondary">Roodjino Chérilus</div>
+          <h1 className="text-2xl font-semibold mt-1">Personal Brand</h1>
+          <p className="text-text-secondary text-sm mt-3">Sign in with Google to access the command center.</p>
         </div>
         {!supabaseConfigured && (
           <div className="card-pad border-warning/40 bg-warning/5 text-warning text-xs text-left">
