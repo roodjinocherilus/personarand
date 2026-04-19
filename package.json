@@ -9,7 +9,7 @@
     "dev:client": "cd client && npm run dev",
     "dev": "concurrently -n server,client -c blue,magenta \"npm run dev:server\" \"npm run dev:client\"",
     "build:client": "cd client && npm run build",
-    "vercel-build": "npm install --prefix server && npm install --prefix client && npm run --prefix client build"
+    "vercel-build": "npm install --prefix server && cd client && npm install && npm run build"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
