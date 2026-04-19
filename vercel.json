@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "client/dist",
-  "installCommand": "npm install --prefix server && npm install --prefix client",
   "rewrites": [
     { "source": "/s/:id", "destination": "/api/signup/page/:id" },
     { "source": "/api/(.*)", "destination": "/api/index" },
