@@ -39,6 +39,10 @@ export default function NewsletterCompose({ issueId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
+  // When auto-save fails we surface the error and refuse to clear it until
+  // the next successful save. This kills the "I thought it saved" failure
+  // mode where the catch block used to swallow errors silently.
+  const [autoSaveError, setAutoSaveError] = useState(null);
   const [id, setId] = useState(issueId);
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('');
@@ -68,6 +72,8 @@ export default function NewsletterCompose({ issueId, onBack }) {
 
   async function loadIssue() {
     setLoading(true);
+    setAutoSaveError(null);
+    setSavedAt(null);
     try {
       if (issueId) {
         const issue = await api.newsletter.get(issueId);
@@ -94,7 +100,9 @@ export default function NewsletterCompose({ issueId, onBack }) {
   }
   useEffect(() => { loadIssue(); }, [issueId]);
 
-  // Auto-save every 30s for drafts
+  // Auto-save every 30s for drafts. Debounced: fires 30s after the last edit.
+  // On failure we surface the error — session expired, server down, etc. —
+  // so the user doesn't close the tab assuming it saved.
   useEffect(() => {
     if (firstLoadRef.current) { firstLoadRef.current = false; return; }
     if (status === 'sent') return;
@@ -112,8 +120,10 @@ export default function NewsletterCompose({ issueId, onBack }) {
           await api.newsletter.update(id, { title, subject_line: subject, content_md: markdown, template_type: templateType });
         }
         setSavedAt(new Date());
-      } catch {
-        // swallow — manual save always available
+        setAutoSaveError(null);
+      } catch (err) {
+        console.warn('[newsletter] auto-save failed:', err);
+        setAutoSaveError(err?.message || 'Auto-save failed');
       }
     }, 30000);
     return () => clearTimeout(t);
@@ -134,7 +144,10 @@ export default function NewsletterCompose({ issueId, onBack }) {
         await api.newsletter.update(id, { title, subject_line: subject, content_md: markdown, template_type: templateType });
       }
       setSavedAt(new Date());
+      // Manual save success also clears any auto-save error state.
+      setAutoSaveError(null);
     } catch (err) {
+      setAutoSaveError(err?.message || 'Save failed');
       alert(`Save failed: ${err.message}`);
     } finally {
       setSaving(false);
@@ -267,12 +280,22 @@ export default function NewsletterCompose({ issueId, onBack }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button className="btn-ghost" onClick={onBack}>← All issues</button>
         <div className="flex flex-wrap items-center gap-2">
-          {savedAt && <span className="text-[11px] text-success">Saved {savedAt.toLocaleTimeString()}</span>}
+          {autoSaveError ? (
+            <span
+              className="text-[11px] text-danger inline-flex items-center gap-1.5"
+              title={autoSaveError}
+            >
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-danger" />
+              Not saved — {autoSaveError.length > 60 ? `${autoSaveError.slice(0, 60)}…` : autoSaveError}
+            </span>
+          ) : savedAt ? (
+            <span className="text-[11px] text-success">Saved {savedAt.toLocaleTimeString()}</span>
+          ) : null}
           <span className="text-[11px] text-text-secondary">{wordCount} words · {readingMins} min read</span>
           <span className={`pill ${statusPill(status)}`}>{status}</span>
           {status !== 'sent' && (
             <button className="btn" onClick={saveNow} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Saving…' : autoSaveError ? 'Retry save' : 'Save'}
             </button>
           )}
         </div>
