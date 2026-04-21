@@ -71,7 +71,13 @@ if (process.env.NODE_ENV === 'production') {
 
 app.use((err, req, res, next) => {
   console.error('[error]', err);
-  res.status(500).json({ error: err.message || 'internal error' });
+  // Respect err.status when a route (or downstream helper like anthropic.js)
+  // has set one — otherwise 500. This is how 429 / 504 / 400 from the
+  // Anthropic wrapper reach the UI with the right semantics.
+  const status = typeof err.status === 'number' && err.status >= 400 && err.status < 600
+    ? err.status
+    : 500;
+  res.status(status).json({ error: err.message || 'internal error' });
 });
 
 module.exports = app;

@@ -70,9 +70,57 @@ function getClient() {
     if (!apiKey) {
       throw new Error('ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.');
     }
-    client = new Anthropic.default({ apiKey });
+    // Vercel Hobby caps each serverless function at 60s. We cap the Anthropic
+    // call at 45s so the request has time to return a useful error instead of
+    // letting the gateway kill it cold. The SDK also auto-retries 429 / 5xx
+    // internally (default 2 retries with exponential backoff) — we just don't
+    // need to hand-roll that part.
+    client = new Anthropic.default({ apiKey, timeout: 45_000, maxRetries: 2 });
   }
   return client;
+}
+
+/**
+ * Translate an SDK error into a clean error with a user-friendly message.
+ * The routes catch this and surface the message verbatim to the UI, so it
+ * needs to be something a non-technical user can act on.
+ */
+function humanizeAnthropicError(err) {
+  const status = err?.status || err?.response?.status;
+  const e = new Error();
+  e.cause = err;
+  if (status === 429) {
+    e.status = 429;
+    const retryAfter = err?.headers?.['retry-after'] || err?.response?.headers?.['retry-after'];
+    e.message = retryAfter
+      ? `Rate-limited by Anthropic. Try again in ~${retryAfter}s.`
+      : 'Rate-limited by Anthropic. Try again in a minute.';
+    return e;
+  }
+  if (status === 400) {
+    const errType = err?.error?.type || err?.response?.data?.error?.type;
+    if (errType === 'moderation' || /refus|policy/i.test(err?.message || '')) {
+      e.status = 400;
+      e.message = 'Claude declined the request on content-policy grounds. Try rephrasing.';
+      return e;
+    }
+    e.status = 400;
+    e.message = `Invalid request: ${err?.message || 'unknown'}`;
+    return e;
+  }
+  if (err?.name === 'APIConnectionTimeoutError' || /timeout|timed out/i.test(err?.message || '')) {
+    e.status = 504;
+    e.message = 'Claude took too long to respond (45s timeout). Shorten the prompt or retry.';
+    return e;
+  }
+  if (status >= 500) {
+    e.status = status;
+    e.message = 'Anthropic is having trouble right now. Try again in a moment.';
+    return e;
+  }
+  e.status = status || 500;
+  e.message = err?.message || 'AI generation failed';
+  return e;
 }
 
 async function generate({ type, platform, topic, tone, length, funnel_layer, extra, model }) {
@@ -118,7 +166,14 @@ async function generate({ type, platform, topic, tone, length, funnel_layer, ext
     params.temperature = temperature;
   }
 
-  const response = await getClient().messages.create(params);
+  let response;
+  try {
+    response = await getClient().messages.create(params);
+  } catch (err) {
+    // Log raw error server-side for debugging; throw humanized for the UI.
+    console.warn('[anthropic] generate failed:', err?.status, err?.message);
+    throw humanizeAnthropicError(err);
+  }
 
   const text = response.content
     .filter((block) => block.type === 'text')
