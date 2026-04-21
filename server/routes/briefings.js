@@ -15,6 +15,64 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/**
+ * GET /api/briefings/running-state
+ * Returns the most recent briefing's news_context + goals_context so the
+ * UI can pre-populate those fields. Your news + goals have continuity —
+ * you're tracking the same 3-5 themes for months, not starting blank each week.
+ * Also returns recurring themes across the last 6 briefings so the AI can
+ * detect patterns and the UI can surface "you've briefed on X for 4 weeks
+ * running — worth a flagship piece?"
+ */
+router.get('/running-state', async (req, res, next) => {
+  try {
+    const db = openDb();
+    const recent = await db.prepare(`
+      SELECT week_start, news_context, goals_context, output
+      FROM weekly_briefings
+      ORDER BY week_start DESC
+      LIMIT 6
+    `).all();
+
+    if (recent.length === 0) {
+      return res.json({ news_context: '', goals_context: '', recurring_themes: [] });
+    }
+
+    const [latest] = recent;
+
+    // Recurring theme detection — pull angle titles across briefings, find
+    // words/phrases that appear repeatedly. Rough but useful.
+    const allTitles = [];
+    for (const r of recent) {
+      const out = normalizeObj(r.output);
+      for (const a of out?.angles || []) {
+        if (a?.title) allTitles.push(a.title);
+      }
+    }
+    const wordCounts = {};
+    const stop = new Set(['the', 'a', 'an', 'of', 'and', 'or', 'is', 'are', 'in', 'on', 'for', 'to', 'your', 'you', 'with', 'from', 'at', 'as', 'how', 'why', 'what', 'this', 'that']);
+    for (const title of allTitles) {
+      const words = title.toLowerCase().match(/\b[a-z][a-z-]{3,}\b/g) || [];
+      for (const w of words) {
+        if (!stop.has(w)) wordCounts[w] = (wordCounts[w] || 0) + 1;
+      }
+    }
+    const recurring = Object.entries(wordCounts)
+      .filter(([, n]) => n >= 3)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([word, count]) => ({ word, count }));
+
+    res.json({
+      news_context: latest.news_context || '',
+      goals_context: latest.goals_context || '',
+      last_week: latest.week_start,
+      briefing_count: recent.length,
+      recurring_themes: recurring,
+    });
+  } catch (e) { next(e); }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const db = openDb();

@@ -26,6 +26,7 @@ export default function BriefingView() {
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [runningState, setRunningState] = useState(null);
 
   async function loadHistory() {
     setLoadingHistory(true);
@@ -35,7 +36,24 @@ export default function BriefingView() {
     } catch { /* silent */ }
     finally { setLoadingHistory(false); }
   }
-  useEffect(() => { loadHistory(); }, []);
+
+  // Pre-populate news + goals from the most recent briefing. Your context
+  // has continuity — you're tracking the same themes week over week, not
+  // rebuilding from scratch each Monday.
+  async function loadRunningState() {
+    try {
+      const s = await api.briefings.runningState();
+      setRunningState(s);
+      // Only pre-fill if the user hasn't typed anything yet this session.
+      if (s.news_context && !news) setNews(s.news_context);
+      if (s.goals_context && !goals) setGoals(s.goals_context);
+    } catch { /* silent */ }
+  }
+
+  useEffect(() => {
+    loadHistory();
+    loadRunningState();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run() {
     setBusy(true);
@@ -91,6 +109,28 @@ export default function BriefingView() {
           your brand thesis and fill coverage gaps.
         </p>
       </div>
+
+      {runningState && runningState.recurring_themes && runningState.recurring_themes.length > 0 && (
+        <div className="card-pad border-primary/30 bg-primary/5">
+          <div className="text-primary text-sm font-semibold">Recurring themes across your last {runningState.briefing_count} briefings</div>
+          <div className="text-text-secondary text-xs mt-1 max-w-2xl">
+            These words keep showing up in your angles. If any of them represent a core thesis, consider a flagship carousel or essay that owns it.
+          </div>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {runningState.recurring_themes.map((t) => (
+              <span key={t.word} className="pill border-primary/40 bg-primary/10 text-primary text-[11px]">
+                {t.word} <span className="text-text-secondary ml-1">×{t.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {runningState && runningState.last_week && (news || goals) && (
+        <div className="text-[11px] text-text-secondary">
+          Pre-filled from your briefing dated {runningState.last_week}. Edit as needed.
+        </div>
+      )}
 
       <div className="card-pad space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-3 items-end">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { RatingButtons } from '../Library/LibraryView.jsx';
+import RepurposePanel from './RepurposePanel.jsx';
 
 const STATUS_OPTIONS = ['draft', 'scheduled', 'posted', 'archived'];
 
@@ -197,6 +198,11 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
       || status !== snap.status;
   })();
 
+  // Post-status nudge: once content is marked posted AND it hasn't been rated
+  // yet, surface a prominent prompt to rate it. Rating is what closes the
+  // feedback loop — every unrated posted item is a missed teaching signal.
+  const needsRating = status === 'posted' && !performance && id;
+
   return (
     <div className="card flex flex-col h-full">
       {/* Language tabs — only shown if French exists, or if we're generating it on-demand */}
@@ -257,6 +263,17 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
         </div>
       </div>
 
+      {/* Rating nudge — appears when content is posted but unrated */}
+      {needsRating && (
+        <div className="px-4 py-2.5 border-b border-success/40 bg-success/10 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-success flex-1 min-w-0">
+            <span className="font-semibold">This is now posted — how did it perform?</span>
+            <span className="text-text-secondary ml-2">Rate to teach the AI what works. 🔥 feeds back into every new generation.</span>
+          </div>
+          <RatingButtons performance={performance} onRate={handleRate} />
+        </div>
+      )}
+
       <textarea
         className="flex-1 bg-[#0f0f0f] p-4 text-sm text-text-primary font-mono leading-relaxed outline-none min-h-[300px] resize-y"
         value={currentBody}
@@ -287,6 +304,15 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
           </button>
         </div>
       </div>
+
+      {/* Repurpose panel — only after the post is actually posted. The whole
+          point is that a post you published (and ideally rated) is the seed
+          for multi-channel derivatives. Don't clutter the editor during drafting. */}
+      {status === 'posted' && id && (
+        <div className="p-4 border-t border-border">
+          <RepurposePanel contentId={id} />
+        </div>
+      )}
     </div>
   );
 }

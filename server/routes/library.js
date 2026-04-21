@@ -193,6 +193,92 @@ router.post('/:id', async (req, res, next) => {
 });
 
 /**
+ * POST /api/content/:id/repurpose
+ * Turn an existing post into a derivative format — X thread, IG caption,
+ * newsletter paragraph, YouTube hook, carousel. The derivative references
+ * the parent via parent_content_id so the Library can show lineage and
+ * the feedback loop treats them as a family.
+ *
+ * Body: { target_type: string, target_platform?: string, bilingual?: bool }
+ */
+router.post('/:id/repurpose', async (req, res, next) => {
+  try {
+    const db = openDb();
+    const { target_type, target_platform, bilingual = false } = req.body || {};
+    if (!target_type) return res.status(400).json({ error: 'target_type required' });
+
+    const parent = await db.prepare('SELECT * FROM generated_content WHERE id = ?').get([req.params.id]);
+    if (!parent) return res.status(404).json({ error: 'Parent content not found' });
+    if (!parent.body) return res.status(400).json({ error: 'Parent has no body to repurpose' });
+
+    // Repurpose prompt: pass the original as authoritative source material,
+    // ask for a derivative in the target format, preserve voice.
+    const topic = `Repurpose an existing post into a different format.
+
+ORIGINAL POST — treat as the truth, the source of the claims and angle:
+---
+TITLE: ${parent.title || '(untitled)'}
+ORIGINAL PLATFORM: ${parent.platform || 'multi'}
+ORIGINAL TYPE: ${parent.content_type || 'post'}
+
+${parent.body}
+---
+
+REPURPOSE INTO: ${target_type}${target_platform ? ` for ${target_platform}` : ''}
+
+Do not just compress or translate. Reshape for the new format's native behavior. Keep the core argument, the voice, the specific examples. Lose whatever doesn't serve the new format. If the original ran long, find the sharpest angle and cut to it.`;
+
+    const extra = `Return ONLY the new content. No preamble. No "Here's the X version".`;
+
+    const enResult = await generate({
+      type: target_type,
+      platform: target_platform || parent.platform,
+      topic,
+      tone: 'sharp',
+      length: 'medium',
+      extra,
+      useFeedbackLoop: true,
+    });
+
+    let frResult = null;
+    if (bilingual) {
+      frResult = await generate({
+        type: target_type,
+        platform: target_platform || parent.platform,
+        topic,
+        tone: 'sharp',
+        length: 'medium',
+        extra,
+        useFeedbackLoop: true,
+        language: 'fr',
+        priorVersion: enResult.text,
+      });
+    }
+
+    const newTitle = (enResult.text.split('\n').find((l) => l.trim().length > 0) || parent.title || 'Repurposed').slice(0, 120);
+    const newTitleFr = frResult
+      ? (frResult.text.split('\n').find((l) => l.trim().length > 0) || '').slice(0, 120)
+      : null;
+
+    const info = await db.prepare(`
+      INSERT INTO generated_content (content_type, platform, title, body, title_fr, body_fr, metadata, status, parent_content_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, 'draft', ?)
+    `).run([
+      target_type,
+      target_platform || parent.platform,
+      newTitle,
+      enResult.text,
+      newTitleFr,
+      frResult?.text || null,
+      JSON.stringify({ repurposed_from: parent.id, source_type: parent.content_type, usage: enResult.usage, usage_fr: frResult?.usage || null }),
+      parent.id,
+    ]);
+    const row = await db.prepare('SELECT * FROM generated_content WHERE id = ?').get([info.lastInsertRowid]);
+    res.json({ ...row, usage: enResult.usage, usage_fr: frResult?.usage || null });
+  } catch (e) { next(e); }
+});
+
+/**
  * POST /api/content/:id/translate-fr
  * Generate the French version of an existing post. Uses the English body as
  * a structural reference and writes a native French version. For when the

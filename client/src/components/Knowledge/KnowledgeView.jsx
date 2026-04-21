@@ -12,6 +12,129 @@ const CATEGORY_LABELS = {
   other: 'Other',
 };
 
+// Starter pack — shown ONLY when the KB is empty. Clicking one opens the
+// editor pre-filled with a skeleton so the user spends 5 minutes filling it
+// in instead of staring at a blank page. Every entry here is high-signal
+// for the AI's next generation.
+const STARTER_TEMPLATES = [
+  {
+    title: 'Active clients & projects',
+    category: 'client',
+    content_md: `# Active clients & projects
+
+Anonymized if needed. The AI uses this to make examples specific.
+
+## Client / project 1
+- **Who**: (e.g., Haitian fintech founder, Series A)
+- **Stage / situation**: (what are they actually doing right now?)
+- **What they care about**: (their top 1-2 pain points)
+- **What I'm helping with**: (concretely)
+
+## Client / project 2
+...
+
+## What these clients have in common
+(the pattern — feeds sharper generations)
+`,
+  },
+  {
+    title: 'Q2 positioning — what I want the market to hear right now',
+    category: 'positioning',
+    content_md: `# Q2 positioning
+
+## The one sentence
+(If someone describes me in a deal room, what should they say?)
+
+## Three things I am
+1.
+2.
+3.
+
+## Three things I am NOT
+1.
+2.
+3.
+
+## The shift from last quarter
+(What's different about how I'm showing up now?)
+`,
+  },
+  {
+    title: 'Frameworks I\'m pushing this quarter',
+    category: 'framework',
+    content_md: `# Live frameworks
+
+These are the frameworks I want referenced in new content. Architect Tax and Distribution Debt are already in the brand prompt — what's NEW?
+
+## Framework 1 — (name)
+- **One-line**:
+- **Why it matters now**:
+- **Example I can point to**:
+
+## Framework 2 — (name)
+...
+`,
+  },
+  {
+    title: 'Haiti context — what\'s happening this month',
+    category: 'haiti',
+    content_md: `# Haiti context — current
+
+Feeds the AI local specificity. Update when context changes.
+
+## The big 2-3 stories
+1.
+2.
+3.
+
+## What the Haitian operator class is thinking about
+(the mood, the fears, the opportunities)
+
+## What's different from 3 months ago
+`,
+  },
+  {
+    title: 'Who I\'m actually speaking to',
+    category: 'project',
+    content_md: `# Primary audiences
+
+## Audience 1 — (e.g., "Haitian founders doing 7-8 figures")
+- **Job title / role**:
+- **Their biggest bet right now**:
+- **What they read / who they follow**:
+- **What they want from me**:
+
+## Audience 2 — (e.g., "Diaspora capital allocators")
+...
+
+## Secondary audience — (e.g., "Global media / journalists")
+...
+`,
+  },
+  {
+    title: 'What the AI should NEVER say',
+    category: 'voice',
+    content_md: `# Anti-voice — off-limits
+
+Violations of brand voice. If the AI produces any of these, reject and regenerate.
+
+## Phrases / registers I don't use
+- Generic LinkedIn platitudes ("At the end of the day…", "It's all about…")
+- Empty entrepreneurial cheerleading
+- (add your own)
+
+## Framings I don't take
+- "I grew X followers by Y" (vanity metrics as lead)
+- "Here's what I learned" without specifics
+- Haiti-as-victim framing
+- (add your own)
+
+## Topics to leave to someone else
+-
+`,
+  },
+];
+
 export default function KnowledgeView() {
   const [entries, setEntries] = useState([]);
   const [totalActiveTokens, setTotalActiveTokens] = useState(0);
@@ -130,22 +253,39 @@ export default function KnowledgeView() {
 
       {loading ? (
         <div className="text-text-secondary">Loading…</div>
-      ) : filtered.length === 0 ? (
-        <div className="card-pad text-text-secondary text-sm">
-          {entries.length === 0 ? (
-            <div>
-              <p>No knowledge entries yet.</p>
-              <p className="mt-3 text-xs">Good things to paste here:</p>
-              <ul className="mt-1 text-xs list-disc list-inside space-y-0.5">
-                <li><strong>Projects</strong> — what you're building (Banj Media roadmap, Prizzz thinking)</li>
-                <li><strong>Clients</strong> — anonymized context about real client situations</li>
-                <li><strong>Frameworks</strong> — drafts of frameworks that aren't in the hardcoded brand prompt yet</li>
-                <li><strong>Positioning</strong> — refinements to how you want to show up right now</li>
-                <li><strong>Raw notes</strong> — thinking-in-progress you want the AI to have access to</li>
-              </ul>
+      ) : entries.length === 0 ? (
+        <div className="space-y-4">
+          <div className="card-pad border-primary/40 bg-primary/5">
+            <div className="text-primary font-semibold">Start here — pick a template to fill in</div>
+            <div className="text-text-secondary text-sm mt-1">
+              The AI references everything you mark <strong>active</strong> as context for every generation.
+              With 0 entries, output stays generic. Even 2-3 filled entries materially sharpens the voice.
             </div>
-          ) : 'No entries match this filter.'}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {STARTER_TEMPLATES.map((t) => (
+              <button
+                key={t.title}
+                onClick={() => setEditing({ ...t, _starter: true })}
+                className="card-pad text-left hover:border-primary/60 hover:bg-primary/5 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">{t.title}</div>
+                  <span className="pill border-border text-text-secondary text-[10px]">{CATEGORY_LABELS[t.category]}</span>
+                </div>
+                <div className="text-[11px] text-text-secondary mt-2 line-clamp-3 whitespace-pre-wrap">
+                  {t.content_md.split('\n').slice(2, 8).join(' ').slice(0, 160)}…
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="text-[11px] text-text-secondary text-center">
+            Or{' '}
+            <button className="underline hover:text-primary" onClick={() => setEditing('new')}>start with a blank entry</button>.
+          </div>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="card-pad text-text-secondary text-sm">No entries match this filter.</div>
       ) : (
         <div className="space-y-2">
           {filtered.map((e) => (

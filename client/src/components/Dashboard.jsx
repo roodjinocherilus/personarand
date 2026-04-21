@@ -81,6 +81,42 @@ export default function Dashboard() {
 
   const postedCount = library.filter((row) => row.status === 'posted').length;
 
+  // Unrated-but-posted from the last 7 days — these are missed teaching
+  // signals for the AI feedback loop. Show a banner if any exist.
+  const sevenDaysAgo = Date.now() - 7 * 86400_000;
+  const unratedPosted = library.filter((r) => {
+    if (r.status !== 'posted') return false;
+    if (r.performance) return false;
+    const t = r.updated_at || r.created_at;
+    return t && new Date(t).getTime() > sevenDaysAgo;
+  });
+
+  // Days since last posted — per platform, for cadence discipline.
+  // If the user has ever posted there but nothing in >5 days, surface it.
+  const daysSinceByPlatform = Object.entries(platformHealth || {})
+    .filter(([, h]) => h.status !== 'unknown' && typeof h.days_since_last_posted === 'number' && h.days_since_last_posted >= 5)
+    .sort((a, b) => b[1].days_since_last_posted - a[1].days_since_last_posted);
+
+  // Next-up queue — what the user should tackle next.
+  //  1. Items still 'planned' (not yet generated / posted)
+  //  2. Earliest week first, within week use funnel-gap priority
+  //  3. Cap at 3 current-week + 3 overdue (prior weeks, still planned)
+  const plannedItems = calendar.filter((c) => c.status === 'planned');
+  const maxWeek = calendar.length > 0 ? Math.max(...calendar.map((c) => c.week || 1)) : 1;
+  // Naive "current week" = whichever week has the most posted+scripted items.
+  // Good enough without committing to a real date→week map.
+  const activityByWeek = {};
+  for (const c of calendar) {
+    if (c.status !== 'planned') {
+      activityByWeek[c.week] = (activityByWeek[c.week] || 0) + 1;
+    }
+  }
+  const currentWeek = Object.keys(activityByWeek).length > 0
+    ? Number(Object.entries(activityByWeek).sort((a, b) => b[1] - a[1])[0][0])
+    : 1;
+  const currentWeekQueue = plannedItems.filter((c) => c.week === currentWeek).slice(0, 3);
+  const overdue = plannedItems.filter((c) => (c.week || maxWeek) < currentWeek).slice(0, 3);
+
   return (
     <div className="space-y-8">
       <div>
@@ -102,6 +138,90 @@ export default function Dashboard() {
         <div className="card-pad border-warning/40 bg-warning/5 text-warning text-sm">
           ⚠ ANTHROPIC_API_KEY is not set in .env. Content generation will fail until you add it.
         </div>
+      )}
+
+      {/* Review-enforcement ribbon — unrated posted content from the last week.
+          Rating closes the feedback loop; every unrated post is teaching signal
+          left on the table. */}
+      {unratedPosted.length > 0 && (
+        <div className="card-pad border-success/40 bg-success/5">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-success font-semibold">
+                🔥 Rate {unratedPosted.length} posted item{unratedPosted.length === 1 ? '' : 's'} from this week
+              </div>
+              <div className="text-text-secondary text-xs mt-1 max-w-2xl">
+                Rating them teaches the AI what works. Top-rated posts get injected into every new generation as tonal reference — the more you rate, the sharper the voice matches yours.
+              </div>
+            </div>
+            <a href="/library?sort=newest&status=posted&performance=" className="btn-primary text-xs whitespace-nowrap">
+              Rate in Library →
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Cadence discipline — surface gaps since last-posted-per-platform. */}
+      {daysSinceByPlatform.length > 0 && (
+        <div className="card-pad border-warning/40 bg-warning/5">
+          <div className="text-warning font-semibold text-sm mb-2">Posting cadence — attention needed</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+            {daysSinceByPlatform.slice(0, 4).map(([platform, h]) => (
+              <div key={platform} className="text-text-secondary">
+                <strong className="text-text-primary">{platform}</strong> — {h.days_since_last_posted} days since last post
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Next-up queue — the 1-3 things to work on right now. */}
+      {(currentWeekQueue.length > 0 || overdue.length > 0) && (
+        <section>
+          <div className="section-title">Next up</div>
+          <div className="space-y-2">
+            {overdue.length > 0 && (
+              <div className="card-pad border-danger/30 bg-danger/5">
+                <div className="text-danger text-sm font-semibold mb-2">
+                  {overdue.length} overdue {overdue.length === 1 ? 'item' : 'items'} from prior weeks — decide to ship or archive
+                </div>
+                <div className="space-y-1.5">
+                  {overdue.map((c) => (
+                    <a
+                      key={c.id}
+                      href="/calendar"
+                      className="block text-sm text-text-secondary hover:text-text-primary"
+                    >
+                      <span className="text-[10px] uppercase tracking-widest mr-2 text-danger/70">W{c.week}</span>
+                      {c.title}
+                      <span className="text-[10px] text-text-secondary/70 ml-2">· {c.funnel_layer} · {(c.platforms || []).join(', ')}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            {currentWeekQueue.length > 0 && (
+              <div className="card-pad">
+                <div className="text-text-primary text-sm font-semibold mb-2">
+                  Week {currentWeek} — up next
+                </div>
+                <div className="space-y-1.5">
+                  {currentWeekQueue.map((c) => (
+                    <a
+                      key={c.id}
+                      href="/calendar"
+                      className="block text-sm text-text-secondary hover:text-text-primary"
+                    >
+                      <span className="text-[10px] uppercase tracking-widest mr-2 text-primary">{c.day || 'any'}</span>
+                      {c.title}
+                      <span className="text-[10px] text-text-secondary/70 ml-2">· {c.funnel_layer} · {(c.platforms || []).join(', ')}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       {alerts && (alerts.hot_subscribers_unlinked > 0 || alerts.prospects_need_followup > 0 || alerts.aging_proposals > 0 || alerts.active_insights > 0) && (

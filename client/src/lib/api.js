@@ -78,6 +78,7 @@ export const api = {
   },
   generate: {
     content: (payload) => request('/api/generate/content', { method: 'POST', body: payload }),
+    hooks: (payload) => request('/api/generate/hooks', { method: 'POST', body: payload }),
   },
   prompts: {
     build: (payload) => request('/api/prompts/build', { method: 'POST', body: payload }),
@@ -196,6 +197,7 @@ export const api = {
     update: (id, payload) => request(`/api/content/${id}`, { method: 'POST', body: payload }),
     rate: (id, performance) => request(`/api/content/${id}`, { method: 'POST', body: { performance } }),
     translateFr: (id) => request(`/api/content/${id}/translate-fr`, { method: 'POST' }),
+    repurpose: (id, payload) => request(`/api/content/${id}/repurpose`, { method: 'POST', body: payload }),
     facets: () => request('/api/content/facets'),
     topPerformers: (limit = 5) => request(`/api/content/top-performers?limit=${limit}`),
     export: () => downloadFile('/api/content/export', 'library-export.md'),
@@ -231,6 +233,7 @@ export const api = {
     list: () => request('/api/briefings'),
     get: (id) => request(`/api/briefings/${id}`),
     generate: (payload) => request('/api/briefings/generate', { method: 'POST', body: payload }),
+    runningState: () => request('/api/briefings/running-state'),
   },
   knowledge: {
     list: () => request('/api/knowledge'),

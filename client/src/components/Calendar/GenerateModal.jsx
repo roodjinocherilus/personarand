@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import AIConfidence from '../Generator/AIConfidence.jsx';
 import { api } from '../../lib/api.js';
 import { copyToClipboard } from '../../lib/clipboard.js';
 import ContentEditor from '../Generator/ContentEditor.jsx';
@@ -73,6 +74,8 @@ export default function GenerateModal({ item, seed, onClose }) {
   const [promptPreview, setPromptPreview] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [hooks, setHooks] = useState(null); // array of hook strings
+  const [hooksBusy, setHooksBusy] = useState(false);
 
   const headerLabel = item
     ? `Generate \u00b7 Week ${item.week} \u00b7 ${item.day}`
@@ -112,6 +115,36 @@ export default function GenerateModal({ item, seed, onClose }) {
 
   async function handleRegenerate() {
     await handleGenerate('Try a different angle from the previous one. Vary the hook, the structure, or the framing.');
+  }
+
+  async function handleGenerateHooks() {
+    setHooksBusy(true);
+    setError(null);
+    try {
+      const topic = item
+        ? `${item.title}\n\nBrief: ${item.description}`
+        : seed?.topic || '';
+      const r = await api.generate.hooks({
+        topic,
+        platform,
+        type,
+        funnel_layer: item?.funnel_layer || seed?.funnel_layer,
+        count: 5,
+      });
+      setHooks(r.hooks || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setHooksBusy(false);
+    }
+  }
+
+  function pickHook(hook) {
+    // Fold the chosen hook into the `extra` direction so the next full
+    // generation opens with it.
+    const direction = `Open with this exact hook (keep intact, do not rephrase):\n"${hook}"`;
+    setExtra((prev) => prev ? `${prev}\n\n${direction}` : direction);
+    setHooks(null);
   }
 
   async function handleCopyPrompt() {
@@ -209,6 +242,7 @@ export default function GenerateModal({ item, seed, onClose }) {
                 disabled={generating}
               />
             </Field>
+            <AIConfidence />
             <label className={`flex items-start gap-2 p-3 rounded-md border cursor-pointer transition-colors ${bilingual ? 'border-primary/40 bg-primary/5' : 'border-border hover:border-[#555]'}`}>
               <input
                 type="checkbox"
@@ -228,6 +262,14 @@ export default function GenerateModal({ item, seed, onClose }) {
             <div className="space-y-2">
               <button
                 className="btn w-full justify-center"
+                onClick={handleGenerateHooks}
+                disabled={hooksBusy || generating}
+                title="Generate 5 sharply-different hook openings; pick the one you like, then run a full generation"
+              >
+                {hooksBusy ? 'Testing hooks…' : '⚡ Test 5 hooks first (Haiku)'}
+              </button>
+              <button
+                className="btn w-full justify-center"
                 onClick={handleCopyPrompt}
                 disabled={copying || generating}
                 title="Build the full prompt and copy to clipboard — paste into claude.ai for unlimited refinement"
@@ -244,6 +286,23 @@ export default function GenerateModal({ item, seed, onClose }) {
                   : result ? 'Regenerate' : `Generate in app (Opus 4.7)${bilingual ? ' — EN + FR' : ''}`}
               </button>
             </div>
+
+            {hooks && hooks.length > 0 && (
+              <div className="space-y-2 p-3 rounded-md border border-primary/30 bg-primary/5">
+                <div className="text-xs text-primary font-semibold">5 hook variants — click the sharpest to lock it into the full generation</div>
+                {hooks.map((h, i) => (
+                  <button
+                    key={i}
+                    className="block w-full text-left text-xs p-2 rounded border border-border bg-[#0f0f0f] hover:border-primary transition-colors"
+                    onClick={() => pickHook(h)}
+                  >
+                    <div className="text-[10px] text-text-secondary mb-1">Hook {i + 1}</div>
+                    <div className="text-text-primary whitespace-pre-wrap">{h}</div>
+                  </button>
+                ))}
+                <button className="btn-ghost text-[11px]" onClick={() => setHooks(null)}>dismiss</button>
+              </div>
+            )}
             {copyMsg && (
               <div className="text-success text-xs leading-relaxed">
                 {copyMsg}

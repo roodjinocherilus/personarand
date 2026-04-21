@@ -110,4 +110,46 @@ router.post('/content', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/generate/hooks
+ * Produce 5 sharply different hook variants (first 1-3 sentences) for a
+ * topic. Use before committing to a full generation — pick the sharpest
+ * hook, paste into `extra` as "Open with: …", then run the full gen.
+ *
+ * Uses Haiku: it's a structured/short task, Opus is overkill.
+ */
+router.post('/hooks', async (req, res, next) => {
+  try {
+    const { topic, platform, type, funnel_layer, count = 5 } = req.body || {};
+    if (!topic) return res.status(400).json({ error: 'topic required' });
+
+    const topicPrompt = `Produce ${count} sharply-different HOOK OPENINGS for a ${type || 'post'} on ${platform || 'LinkedIn'}.
+
+TOPIC / BRIEF:
+${topic}
+
+${funnel_layer ? `FUNNEL LAYER: ${funnel_layer}\n` : ''}A hook is the first 1-3 sentences — the reason a reader stops scrolling. Each variant must work alone and earn the second line.
+
+Each hook should use a genuinely different angle — counter-intuitive claim, specific number, contrarian framing, named-example cold open, question with an uncomfortable answer, etc. Do NOT generate minor rephrasings of the same thought.`;
+
+    const extra = `Return ONLY a JSON array of ${count} strings. Each element is a hook (1-3 sentences). No code fences, no commentary.`;
+
+    const result = await generate({
+      type: 'article',
+      platform: platform || 'multi',
+      topic: topicPrompt,
+      tone: 'sharp',
+      length: 'short',
+      extra,
+      model: 'haiku', // structured short task — Haiku handles this at 5x lower cost
+      useFeedbackLoop: true,
+    });
+
+    let text = (result.text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+    let hooks = [];
+    try { hooks = JSON.parse(text); } catch { return res.json({ hooks: [], raw: result.text, parse_error: 'Could not parse JSON' }); }
+    res.json({ hooks, usage: result.usage });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
