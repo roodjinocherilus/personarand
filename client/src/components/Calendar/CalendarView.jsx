@@ -104,7 +104,7 @@ export default function CalendarView() {
           )}
           <button className="btn" onClick={() => setShowIntelligence('gaps')}>📊 Gaps</button>
           <button className="btn" onClick={() => setShowIntelligence('brainstorm')}>💡 Brainstorm</button>
-          <button className="btn-primary" onClick={() => setShowIntelligence('plan')}>✨ Plan with AI</button>
+          <button className="btn-primary" onClick={() => setShowIntelligence('plan')}>✨ Plan weeks with AI</button>
         </div>
       </div>
 
@@ -113,7 +113,7 @@ export default function CalendarView() {
           <div>
             <div className="text-sm font-medium">Upgrade to the rich default calendar?</div>
             <div className="text-xs text-text-secondary mt-1">
-              You currently have <strong>{items.length}</strong> items. The new default seed has ~38 items across 4 weeks, matching funnel-layer targets, multi-platform, daily cadence. Or use ✨ Plan with AI for something fully custom.
+              You currently have <strong>{items.length}</strong> items. The new default seed has ~38 items across 4 weeks, matching funnel-layer targets, multi-platform, daily cadence. Or use ✨ Plan weeks with AI for per-week themed planning.
             </div>
           </div>
           <button className="btn-primary whitespace-nowrap" onClick={handleReseed} disabled={reseeding}>

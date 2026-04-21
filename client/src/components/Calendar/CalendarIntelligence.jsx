@@ -16,7 +16,7 @@ export default function CalendarIntelligence({ initialTab = 'plan', onClose, onI
         </div>
         <div className="flex gap-1 border-b border-border px-6">
           {[
-            { k: 'plan', label: 'Plan a month' },
+            { k: 'plan', label: 'Plan weeks' },
             { k: 'brainstorm', label: 'Brainstorm angles' },
             { k: 'gaps', label: 'Gaps analysis' },
           ].map((t) => (
@@ -28,7 +28,7 @@ export default function CalendarIntelligence({ initialTab = 'plan', onClose, onI
           ))}
         </div>
         <div className="p-6">
-          {tab === 'plan' && <PlanMonthTab onItemsAdded={onItemsAdded} onClose={onClose} />}
+          {tab === 'plan' && <PlanWeeksTab onItemsAdded={onItemsAdded} onClose={onClose} />}
           {tab === 'brainstorm' && <BrainstormTab onItemsAdded={onItemsAdded} />}
           {tab === 'gaps' && <GapsTab onItemsAdded={onItemsAdded} switchToBrainstorm={() => setTab('brainstorm')} />}
         </div>
@@ -37,62 +37,78 @@ export default function CalendarIntelligence({ initialTab = 'plan', onClose, onI
   );
 }
 
-function PlanMonthTab({ onItemsAdded, onClose }) {
-  const [form, setForm] = useState({
-    theme: '',
-    context: '',
-    days: 28,
-    start_week: 1,
+/**
+ * Plan-weeks tab — the primary planning surface. Each week is its own
+ * unit with its own theme. If you want to plan a month, you plan 4
+ * weeks with 4 themes. Matches how a growth manager actually works:
+ * you don't pick one theme for 30 days, you pick a theme for each week
+ * and each theme serves a story arc across the month.
+ */
+function PlanWeeksTab({ onItemsAdded, onClose }) {
+  // Each week = { start_week, theme, context }. Starts with one.
+  const [weeks, setWeeks] = useState([{ start_week: 1, theme: '', context: '' }]);
+  // Shared config across all weeks (kept simple — per-week funnel targets would be noise).
+  const [shared, setShared] = useState({
     funnel_targets: { Discovery: 6, Authority: 4, Trust: 3, Conversion: 2, Identity: 2 },
     platforms: ['LinkedIn', 'X', 'Instagram', 'Instagram Reels', 'TikTok', 'YouTube'],
   });
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(null); // { current, total, message }
+  const [progress, setProgress] = useState(null);
   const [items, setItems] = useState([]);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(null);
 
-  async function run() {
-    if (form.theme.length < 10) { setError('Theme must be at least 10 chars'); return; }
-    setBusy(true); setError(null); setItems([]); setSaved(null); setProgress(null);
+  function updateWeek(i, patch) {
+    setWeeks((prev) => prev.map((w, idx) => (idx === i ? { ...w, ...patch } : w)));
+  }
+  function addWeek() {
+    setWeeks((prev) => {
+      const last = prev[prev.length - 1];
+      return [...prev, { start_week: (last?.start_week || 1) + 1, theme: '', context: '' }];
+    });
+  }
+  function removeWeek(i) {
+    setWeeks((prev) => prev.filter((_, idx) => idx !== i));
+  }
+  function duplicateWeekTheme(fromIdx, toIdx) {
+    const src = weeks[fromIdx];
+    if (src) updateWeek(toIdx, { theme: src.theme, context: src.context });
+  }
 
-    // Chunk >7 days into weekly calls to stay under Vercel's 60s function limit.
-    const chunks = [];
-    const totalDays = form.days;
-    let remaining = totalDays;
-    let chunkWeek = form.start_week;
-    while (remaining > 0) {
-      const chunkDays = Math.min(7, remaining);
-      chunks.push({ days: chunkDays, start_week: chunkWeek });
-      remaining -= chunkDays;
-      chunkWeek += 1;
+  async function run() {
+    const missing = weeks.findIndex((w) => !w.theme || w.theme.length < 10);
+    if (missing !== -1) {
+      setError(`Week ${weeks[missing].start_week}'s theme must be at least 10 chars`);
+      return;
     }
+    setBusy(true); setError(null); setItems([]); setSaved(null); setProgress(null);
 
     try {
       const allItems = [];
-      for (let i = 0; i < chunks.length; i++) {
-        const c = chunks[i];
-        setProgress({ current: i + 1, total: chunks.length, message: `Planning week ${c.start_week}…` });
+      for (let i = 0; i < weeks.length; i++) {
+        const w = weeks[i];
+        setProgress({ current: i + 1, total: weeks.length, message: `Planning week ${w.start_week} — "${w.theme.slice(0, 40)}${w.theme.length > 40 ? '…' : ''}"` });
+        // Feed prior weeks into context for continuity — without passing them as
+        // "theme", so each week's arc stays distinct.
         const contextWithHistory = i > 0
-          ? `${form.context}\n\nPrior week items (for continuity — don't repeat, build on them):\n${allItems.slice(-10).map((it) => `- ${it.title}`).join('\n')}`
-          : form.context;
+          ? `${w.context || ''}\n\nPrior weeks' items (for continuity — don't repeat, build on them):\n${allItems.slice(-12).map((it) => `- W${it.week}: ${it.title}`).join('\n')}`
+          : w.context || '';
         const r = await api.calendar.planMonth({
-          ...form,
-          days: c.days,
-          start_week: c.start_week,
+          theme: w.theme,
           context: contextWithHistory,
+          days: 7,
+          start_week: w.start_week,
+          funnel_targets: shared.funnel_targets,
+          platforms: shared.platforms,
           save: false,
         });
         if (r.parse_error) {
-          setError(`Week ${c.start_week} parse issue: ${r.parse_error}. Stopping. ${allItems.length} items generated so far.`);
+          setError(`Week ${w.start_week} parse issue: ${r.parse_error}. Stopping. ${allItems.length} items generated so far.`);
           break;
         }
-        // Each chunked call asks the AI for "week 1-1" (because each chunk is 7 days).
-        // So every item comes back with week:1, losing which CALENDAR week it belongs to.
-        // Stamp the chunk's start_week onto each item here, before we save, so the
-        // calendar view actually shows Week 1 / 2 / 3 / 4 instead of bunching them all
-        // into Week 1.
-        allItems.push(...(r.items || []).map((it) => ({ ...it, week: c.start_week })));
+        // Backend chunk always returns week:1 from its own POV — stamp the real
+        // start_week here so the calendar view shows the right week bucket.
+        allItems.push(...(r.items || []).map((it) => ({ ...it, week: w.start_week })));
       }
       setItems(allItems);
       setProgress(null);
@@ -107,7 +123,6 @@ function PlanMonthTab({ onItemsAdded, onClose }) {
     if (items.length === 0) return;
     setBusy(true);
     try {
-      // Save items directly — already generated via chunked calls above.
       for (const item of items) {
         await api.calendar.create({
           week: item.week,
@@ -126,48 +141,77 @@ function PlanMonthTab({ onItemsAdded, onClose }) {
   }
 
   return (
-    <div className="space-y-3">
-      <div>
-        <div className="label">Theme / brief (required)</div>
-        <textarea
-          className="input min-h-[80px]"
-          value={form.theme}
-          onChange={(e) => setForm({ ...form, theme: e.target.value })}
-          placeholder="e.g. Build on the Architect Problem thesis for 30 days. Push into the AI-exposes-weak-businesses angle in week 2. Use week 3 to introduce Banj Media's communication-infrastructure positioning."
-        />
-      </div>
-      <div>
-        <div className="label">Additional context (optional)</div>
-        <textarea
-          className="input min-h-[60px]"
-          value={form.context}
-          onChange={(e) => setForm({ ...form, context: e.target.value })}
-          placeholder="e.g. I'm speaking at a conference April 25 — work that in. Also planning to share a client case study that week."
-        />
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div>
-          <div className="label">Days</div>
-          <select className="input" value={form.days} onChange={(e) => setForm({ ...form, days: Number(e.target.value) })}>
-            <option value={7}>7 (1 week)</option>
-            <option value={14}>14 (2 weeks)</option>
-            <option value={21}>21 (3 weeks)</option>
-            <option value={28}>28 (4 weeks)</option>
-          </select>
-        </div>
-        <div>
-          <div className="label">Start week number</div>
-          <input className="input font-mono" inputMode="numeric" value={form.start_week} onChange={(e) => setForm({ ...form, start_week: Number(e.target.value) || 1 })} />
-        </div>
+    <div className="space-y-4">
+      <div className="text-xs text-text-secondary">
+        Plan one week at a time, each with its own theme. Want a month? Add 4 weeks. Each theme drives that week's narrative arc; the AI sees prior weeks for continuity but doesn't conflate them.
       </div>
 
-      <div className="flex justify-between items-end">
+      <div className="space-y-3">
+        {weeks.map((w, i) => (
+          <div key={i} className="card-pad space-y-2 border-primary/30">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold text-primary">
+                Week {w.start_week}
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] text-text-secondary flex items-center gap-1">
+                  <span>Week #</span>
+                  <input
+                    className="input font-mono w-16 py-1 text-xs"
+                    inputMode="numeric"
+                    value={w.start_week}
+                    onChange={(e) => updateWeek(i, { start_week: Number(e.target.value) || 1 })}
+                  />
+                </label>
+                {weeks.length > 1 && (
+                  <button className="btn-ghost text-xs text-danger" onClick={() => removeWeek(i)} disabled={busy}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="label">Theme for week {w.start_week} (required)</div>
+              <textarea
+                className="input min-h-[70px]"
+                value={w.theme}
+                onChange={(e) => updateWeek(i, { theme: e.target.value })}
+                placeholder={i === 0
+                  ? 'e.g. Open the month with the Architect Problem thesis. Land the "distribution got sovereign" framing across LinkedIn + X.'
+                  : `e.g. Follow week ${w.start_week - 1}'s thesis with a concrete Haiti-context example. Introduce the Banj Media case study.`}
+                disabled={busy}
+              />
+            </div>
+            <div>
+              <div className="label">Context for week {w.start_week} (optional)</div>
+              <textarea
+                className="input min-h-[50px]"
+                value={w.context}
+                onChange={(e) => updateWeek(i, { context: e.target.value })}
+                placeholder="e.g. I'm speaking at a conference this week. Also planning a client case study on Tuesday."
+                disabled={busy}
+              />
+            </div>
+            {i > 0 && weeks[0]?.theme && !w.theme && (
+              <button className="btn-ghost text-[11px]" onClick={() => duplicateWeekTheme(0, i)} disabled={busy}>
+                ← Copy theme from week 1
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button className="btn w-full justify-center text-sm" onClick={addWeek} disabled={busy}>
+        + Add another week
+      </button>
+
+      <div className="flex justify-between items-end pt-2 border-t border-border">
         <div className="text-[11px] text-text-secondary">
-          Targets/week: Discovery 6 · Authority 4 · Trust 3 · Conversion 2 · Identity 2
-          {form.days > 7 && <div className="mt-1">Plans &gt; 7 days are split into weekly chunks (stays under Vercel's 60s limit).</div>}
+          Per-week funnel targets: Discovery 6 · Authority 4 · Trust 3 · Conversion 2 · Identity 2 (~17 items/week).
+          <div className="mt-1">Each week is its own API call — takes ~30-40s per week.</div>
         </div>
-        <button className="btn-primary" onClick={run} disabled={busy || !form.theme}>
-          {busy ? 'Generating…' : items.length > 0 ? 'Regenerate' : 'Generate plan'}
+        <button className="btn-primary" onClick={run} disabled={busy || weeks.every((w) => !w.theme)}>
+          {busy ? 'Generating…' : items.length > 0 ? 'Regenerate' : `Generate ${weeks.length} week${weeks.length === 1 ? '' : 's'}`}
         </button>
       </div>
 
