@@ -57,11 +57,23 @@ export default function LibraryView() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Content Library</h1>
-        <p className="text-text-secondary text-sm mt-1">
-          Every generation, saved. The corpus is the institutional memory.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Content Library</h1>
+          <p className="text-text-secondary text-sm mt-1">
+            Every generation, saved. The corpus is the institutional memory.
+          </p>
+        </div>
+        <button
+          className="btn"
+          onClick={async () => {
+            try { await api.library.export(); }
+            catch (err) { alert(`Export failed: ${err.message}`); }
+          }}
+          title="Download the entire library as a single markdown file"
+        >
+          ⬇ Export as markdown
+        </button>
       </div>
 
       <div className="card-pad flex flex-wrap gap-3 items-end">
@@ -116,10 +128,15 @@ export default function LibraryView() {
         </div>
       ) : (
         <div className="space-y-3">
+          <div className="text-[11px] text-text-secondary">
+            {rows.length} result{rows.length === 1 ? '' : 's'}
+            {filters.q ? ` for "${filters.q}"` : ''}
+          </div>
           {rows.map((row) => (
             <LibraryRow
               key={row.id}
               row={row}
+              query={filters.q}
               onOpen={() => setSelected(row)}
               onGenerateSimilar={() => handleGenerateSimilar(row)}
             />
@@ -150,13 +167,15 @@ function Field({ label, children, className = '' }) {
   );
 }
 
-function LibraryRow({ row, onOpen, onGenerateSimilar }) {
-  const preview = (row.body || '').slice(0, 180);
+function LibraryRow({ row, query, onOpen, onGenerateSimilar }) {
+  const excerpt = buildExcerpt(row.body || '', query, 180);
   return (
     <div className="card-pad hover:border-[#555] transition-colors">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1 cursor-pointer" onClick={onOpen}>
-          <div className="text-base font-semibold truncate">{row.title || 'Untitled'}</div>
+          <div className="text-base font-semibold truncate">
+            {query ? highlight(row.title || 'Untitled', query) : (row.title || 'Untitled')}
+          </div>
           <div className="text-[11px] text-text-secondary mt-1 flex flex-wrap gap-2">
             <span>{row.platform || 'multi'}</span>
             <span>·</span>
@@ -165,7 +184,9 @@ function LibraryRow({ row, onOpen, onGenerateSimilar }) {
             <span>·</span>
             <span>{new Date(row.created_at).toLocaleString()}</span>
           </div>
-          <p className="text-sm text-text-secondary mt-3 line-clamp-2 whitespace-pre-wrap">{preview}{row.body?.length > 180 ? '…' : ''}</p>
+          <p className="text-sm text-text-secondary mt-3 line-clamp-2 whitespace-pre-wrap">
+            {query ? highlight(excerpt, query) : excerpt}
+          </p>
           {row.featured_in_newsletters && (
             <div className="text-[11px] text-primary mt-2">
               Featured in newsletter: {row.featured_in_newsletters}
@@ -184,6 +205,34 @@ function LibraryRow({ row, onOpen, onGenerateSimilar }) {
       </div>
     </div>
   );
+}
+
+function buildExcerpt(body, query, len) {
+  if (!body) return '';
+  if (!query) return body.slice(0, len) + (body.length > len ? '…' : '');
+  const lower = body.toLowerCase();
+  const idx = lower.indexOf(query.toLowerCase());
+  if (idx === -1) return body.slice(0, len) + (body.length > len ? '…' : '');
+  // Center the excerpt around the match
+  const start = Math.max(0, idx - Math.floor(len / 3));
+  const end = Math.min(body.length, start + len);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < body.length ? '…' : '';
+  return prefix + body.slice(start, end) + suffix;
+}
+
+function highlight(text, query) {
+  if (!query || !text) return text;
+  const parts = String(text).split(new RegExp(`(${escapeRegex(query)})`, 'ig'));
+  return parts.map((p, i) =>
+    p.toLowerCase() === query.toLowerCase()
+      ? <mark key={i} className="bg-primary/30 text-primary px-0.5 rounded-sm">{p}</mark>
+      : <span key={i}>{p}</span>
+  );
+}
+
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function statusPill(status) {

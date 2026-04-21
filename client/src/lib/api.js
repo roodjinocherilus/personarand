@@ -25,6 +25,36 @@ async function request(path, options = {}) {
 
 function safeJson(s) { try { return JSON.parse(s); } catch { return s; } }
 
+/**
+ * Trigger a file download from an authed endpoint. Uses the same bearer token
+ * as api.request, but returns raw bytes and forces the browser to save them
+ * under the server-suggested filename.
+ */
+async function downloadFile(path, fallbackName = 'export.md') {
+  const token = await getAccessToken().catch(() => null);
+  const res = await fetch(path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j.error || msg; } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  // Pull filename from Content-Disposition when present.
+  const disp = res.headers.get('Content-Disposition') || '';
+  const match = disp.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const api = {
   calendar: {
     list: (params = {}) => {
@@ -165,6 +195,7 @@ export const api = {
     get: (id) => request(`/api/content/${id}`),
     update: (id, payload) => request(`/api/content/${id}`, { method: 'POST', body: payload }),
     facets: () => request('/api/content/facets'),
+    export: () => downloadFile('/api/content/export', 'library-export.md'),
   },
   metrics: {
     list: (params = {}) => {
@@ -205,6 +236,7 @@ export const api = {
     update: (id, payload) => request(`/api/knowledge/${id}`, { method: 'PATCH', body: payload }),
     remove: (id) => request(`/api/knowledge/${id}`, { method: 'DELETE' }),
     toggle: (ids, is_active) => request('/api/knowledge/toggle', { method: 'POST', body: { ids, is_active } }),
+    export: () => downloadFile('/api/knowledge/export', 'knowledge-export.md'),
   },
   health: () => request('/api/health'),
   uploads: {

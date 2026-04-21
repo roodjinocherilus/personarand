@@ -56,7 +56,7 @@ export default function App() {
     <div className="flex min-h-screen bg-bg text-text-primary">
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} onSignOut={signOut} user={session?.user} />
       <main className="flex-1 min-w-0 overflow-x-hidden">
-        <header className="lg:hidden sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-card border-b border-border">
+        <header className="mobile-header lg:hidden sticky top-0 z-20 flex items-center gap-3 px-4 pb-3 bg-card border-b border-border">
           <button onClick={() => setMobileOpen(true)} aria-label="Open navigation" className="p-2 -ml-2 rounded-md text-text-primary hover:bg-[#1f1f1f]">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="3" y1="6" x2="21" y2="6" />

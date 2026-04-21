@@ -38,6 +38,51 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.get('/export', async (req, res, next) => {
+  try {
+    const db = openDb();
+    const rows = await db.prepare(`
+      SELECT gc.*, cc.funnel_layer AS calendar_funnel_layer, cc.title AS calendar_title, cc.week AS calendar_week
+      FROM generated_content gc
+      LEFT JOIN content_calendar cc ON cc.id = gc.calendar_id
+      ORDER BY gc.created_at DESC
+    `).all();
+
+    const date = new Date().toISOString().slice(0, 10);
+    const lines = [
+      `# Content Library Export`,
+      `> Exported ${date} · ${rows.length} entries`,
+      ``,
+    ];
+    for (const r of rows) {
+      const created = r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : '—';
+      const status = r.status || '—';
+      const platform = r.platform || 'multi';
+      const type = r.content_type || '—';
+      const calInfo = r.calendar_title
+        ? `Week ${r.calendar_week} · ${r.calendar_title}${r.calendar_funnel_layer ? ` · ${r.calendar_funnel_layer}` : ''}`
+        : 'Free-form';
+      lines.push('---');
+      lines.push('');
+      lines.push(`## ${r.title || 'Untitled'}`);
+      lines.push('');
+      lines.push(`- **Created:** ${created}`);
+      lines.push(`- **Platform:** ${platform}`);
+      lines.push(`- **Type:** ${type}`);
+      lines.push(`- **Status:** ${status}`);
+      lines.push(`- **Origin:** ${calInfo}`);
+      if (r.performance_notes) lines.push(`- **Performance notes:** ${r.performance_notes.replace(/\n/g, ' ')}`);
+      lines.push('');
+      lines.push(r.body || '');
+      lines.push('');
+    }
+    const markdown = lines.join('\n');
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="library-export-${date}.md"`);
+    res.send(markdown);
+  } catch (e) { next(e); }
+});
+
 router.get('/facets', async (req, res, next) => {
   try {
     const db = openDb();

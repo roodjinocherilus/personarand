@@ -18,6 +18,7 @@ export default function KnowledgeView() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // null | 'new' | entry object
   const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
 
   async function load() {
     setLoading(true);
@@ -46,7 +47,12 @@ export default function KnowledgeView() {
     } catch (err) { alert(err.message); }
   }
 
-  const filtered = filter === 'all' ? entries : entries.filter((e) => e.category === filter);
+  const q = query.trim().toLowerCase();
+  const filtered = entries.filter((e) => {
+    if (filter !== 'all' && e.category !== filter) return false;
+    if (!q) return true;
+    return (e.title || '').toLowerCase().includes(q) || (e.content_md || '').toLowerCase().includes(q);
+  });
   const activeCount = entries.filter((e) => e.is_active).length;
   const categoriesInUse = [...new Set(entries.map((e) => e.category))];
 
@@ -60,7 +66,19 @@ export default function KnowledgeView() {
             Plan with AI, Generate content, Newsletter expand). This is what turns generic output into specific output.
           </p>
         </div>
-        <button className="btn-primary" onClick={() => setEditing('new')}>+ New entry</button>
+        <div className="flex gap-2">
+          <button
+            className="btn"
+            onClick={async () => {
+              try { await api.knowledge.export(); }
+              catch (err) { alert(`Export failed: ${err.message}`); }
+            }}
+            title="Download all knowledge entries as a single markdown file"
+          >
+            ⬇ Export
+          </button>
+          <button className="btn-primary" onClick={() => setEditing('new')}>+ New entry</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -80,6 +98,16 @@ export default function KnowledgeView() {
           Each AI call includes all of this in the system prompt. That means higher cost per call. Consider marking less-critical entries inactive.
         </div>
       )}
+
+      <div>
+        <input
+          className="input"
+          type="search"
+          placeholder="Search titles or content…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <button className={`pill ${filter === 'all' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-secondary hover:text-text-primary'}`} onClick={() => setFilter('all')}>

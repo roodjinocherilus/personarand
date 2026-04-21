@@ -20,6 +20,37 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.get('/export', async (req, res, next) => {
+  try {
+    const db = openDb();
+    const rows = await db.prepare(`SELECT * FROM knowledge_base ORDER BY category ASC, updated_at DESC`).all();
+    const date = new Date().toISOString().slice(0, 10);
+    const lines = [
+      `# Knowledge Base Export`,
+      `> Exported ${date} · ${rows.length} entries`,
+      ``,
+    ];
+    for (const r of rows) {
+      const updated = r.updated_at ? new Date(r.updated_at).toISOString().slice(0, 10) : '—';
+      lines.push('---');
+      lines.push('');
+      lines.push(`## ${r.title}`);
+      lines.push('');
+      lines.push(`- **Category:** ${r.category}`);
+      lines.push(`- **Active:** ${r.is_active ? 'yes' : 'no'}`);
+      lines.push(`- **Tokens:** ~${r.token_estimate || 0}`);
+      lines.push(`- **Last updated:** ${updated}`);
+      lines.push('');
+      lines.push(r.content_md || '');
+      lines.push('');
+    }
+    const markdown = lines.join('\n');
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="knowledge-export-${date}.md"`);
+    res.send(markdown);
+  } catch (e) { next(e); }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const db = openDb();

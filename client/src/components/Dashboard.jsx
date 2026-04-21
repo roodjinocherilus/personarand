@@ -268,7 +268,7 @@ function OutcomesLogger({ onSaved }) {
   return (
     <div className="card-pad mt-3">
       <div className="text-[11px] uppercase tracking-wider text-text-secondary mb-3">Log an outcome</div>
-      <div className="grid grid-cols-1 md:grid-cols-[140px_1fr_120px_1fr_auto] gap-2 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[140px_1fr_120px_1fr_auto] gap-2 items-start">
         <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
           <option value="inquiry">Inquiry</option>
           <option value="speaking">Speaking</option>

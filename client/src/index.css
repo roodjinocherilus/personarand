@@ -44,12 +44,28 @@ body {
 ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
 
+/* Prevent iOS Safari from zooming into form fields on focus. */
+/* Tailwind text-sm (14px) triggers the zoom; bumping to 16px below md kills it */
+/* without affecting our desktop typography. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe-area padding for the mobile header on notched devices (PWA, iOS). */
+.mobile-header {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+}
+
 @layer components {
   .card {
     @apply bg-card border border-border rounded-lg;
   }
   .card-pad {
-    @apply bg-card border border-border rounded-lg p-5;
+    @apply bg-card border border-border rounded-lg p-4 md:p-5;
   }
   .btn {
     @apply inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors;
