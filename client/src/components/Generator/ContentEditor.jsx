@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { RatingButtons } from '../Library/LibraryView.jsx';
 import RepurposePanel from './RepurposePanel.jsx';
+import PostedVersionPanel from './PostedVersionPanel.jsx';
 
 const STATUS_OPTIONS = ['draft', 'scheduled', 'posted', 'archived'];
 
@@ -23,6 +24,9 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
   const [titleFr, setTitleFr] = useState(initial.title_fr || '');
   const [status, setStatus] = useState(initial.status || 'draft');
   const [performance, setPerformance] = useState(initial.performance || null);
+  // Track posted_version locally so the PostedVersionPanel updates without a full refetch.
+  const [postedVersionEn, setPostedVersionEn] = useState(initial.posted_version_en || null);
+  const [postedVersionFr, setPostedVersionFr] = useState(initial.posted_version_fr || null);
   // Which language the textarea is editing. Defaults to EN; if only FR exists
   // (unusual but possible), start on FR.
   const [lang, setLang] = useState(() => (!initial.body && initial.body_fr ? 'fr' : 'en'));
@@ -52,6 +56,8 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
     setTitleFr(initial.title_fr || '');
     setStatus(initial.status || 'draft');
     setPerformance(initial.performance || null);
+    setPostedVersionEn(initial.posted_version_en || null);
+    setPostedVersionFr(initial.posted_version_fr || null);
     setLang(!initial.body && initial.body_fr ? 'fr' : 'en');
     setId(initial.id);
     setSavedAt(null);
@@ -304,6 +310,20 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
           </button>
         </div>
       </div>
+
+      {/* Posted-version capture — ask the user for the final version they
+          actually posted. Only renders if posted_version not yet collected.
+          Inside PostedVersionPanel itself it renders `null` when done. */}
+      {status === 'posted' && id && !postedVersionEn && !postedVersionFr && (
+        <PostedVersionPanel
+          row={{ id, body, body_fr: bodyFr, posted_version_en: postedVersionEn, posted_version_fr: postedVersionFr }}
+          onSaved={() => {
+            // Optimistic update so the panel disappears without a refetch.
+            setPostedVersionEn(body);
+            setPostedVersionFr(bodyFr || null);
+          }}
+        />
+      )}
 
       {/* Repurpose panel — only after the post is actually posted. The whole
           point is that a post you published (and ideally rated) is the seed

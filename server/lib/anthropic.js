@@ -81,6 +81,83 @@ async function getTopPerformers(limit = 5) {
 function invalidateTopPerformersCache() { topPerformersCache = { items: [], at: 0 }; }
 
 /**
+ * Fetch recent posts where the user edited the AI's draft before posting.
+ * This is the single sharpest teaching signal we have: it literally answers
+ * "what do I get wrong that Roodjino has to fix?" Every edit = implicit
+ * feedback the AI should absorb.
+ *
+ * We only return rows where posted_version differs from body (meaningful edits).
+ * Cached 60s like the other blocks.
+ */
+let recentEditsCache = { items: [], at: 0 };
+async function getRecentEdits(limit = 3) {
+  if (Date.now() - recentEditsCache.at < 60_000 && recentEditsCache.items.length >= limit) {
+    return recentEditsCache.items.slice(0, limit);
+  }
+  try {
+    const rows = await query(`
+      SELECT
+        title, body, posted_version_en,
+        title_fr, body_fr, posted_version_fr,
+        platform, content_type, posted_at
+      FROM generated_content
+      WHERE posted_version_en IS NOT NULL
+        AND posted_version_en != body
+        AND length(body) > 50
+      ORDER BY posted_at DESC NULLS LAST
+      LIMIT $1
+    `, [limit]);
+    recentEditsCache = { items: rows || [], at: Date.now() };
+    return rows || [];
+  } catch (err) {
+    // Column might not exist yet (migration pending). Fail soft.
+    console.warn('[recent-edits] fetch failed:', err.message);
+    return [];
+  }
+}
+function invalidateRecentEditsCache() { recentEditsCache = { items: [], at: 0 }; }
+
+/**
+ * Format the edit-delta examples as a text block. The AI gets to see
+ * literal "you wrote X → Roodjino actually posted Y" pairs. This is the
+ * most direct teaching signal in the entire system.
+ *
+ * Language-aware: FR generations look at FR edits; EN looks at EN.
+ * If a post was only edited in the other language, it's skipped.
+ */
+function formatRecentEditsBlock(edits, language = 'en') {
+  if (!edits || edits.length === 0) return '';
+  const pairs = edits.map((e, i) => {
+    const wrote = (language === 'fr' ? e.body_fr : e.body) || '';
+    const posted = (language === 'fr' ? e.posted_version_fr : e.posted_version_en) || '';
+    // Skip if this language wasn't edited.
+    if (!wrote || !posted || wrote === posted) return null;
+    // Cap lengths so one long post doesn't dominate the block.
+    const capW = wrote.length > 1200 ? wrote.slice(0, 1200) + '…' : wrote;
+    const capP = posted.length > 1200 ? posted.slice(0, 1200) + '…' : posted;
+    return `### Edit example ${i + 1} (${e.platform || 'multi'} / ${e.content_type || 'post'})
+
+YOU WROTE:
+${capW}
+
+ROODJINO ACTUALLY POSTED:
+${capP}`;
+  }).filter(Boolean);
+  if (pairs.length === 0) return '';
+  return `YOUR DRAFTS vs. WHAT ROODJINO ACTUALLY POSTS (this is what he edits — learn the pattern):
+
+${pairs.join('\n\n---\n\n')}
+
+=== END EDIT EXAMPLES ===
+
+Study the pattern above. What does Roodjino cut? What does he sharpen? What does he tighten? Apply that same editorial hand in your generation below — don't make him do the same edits twice.
+
+---
+
+`;
+}
+
+/**
  * Format the top performers as a text block to prepend to the user message.
  * Returns empty string if there are no rated posts — first-time users see
  * the exact same behavior as before, no regression.
@@ -206,9 +283,18 @@ async function generate({ type, platform, topic, tone, length, funnel_layer, ext
   // `useFeedbackLoop: true` — default stays off so Haiku extraction tasks
   // don't eat tokens on irrelevant context.
   if (useFeedbackLoop) {
-    const performers = await getTopPerformers(5);
-    const block = formatTopPerformersBlock(performers, language);
-    if (block) userMessage = block + userMessage;
+    // Two signal blocks, ordered from "what works" → "what I edit" → task.
+    // Edits come AFTER performers because they're more specific corrective
+    // signal; we want the model to read performers first (set voice ceiling),
+    // then edits (corrections to watch for), then the actual task.
+    const [performers, edits] = await Promise.all([
+      getTopPerformers(5),
+      getRecentEdits(3),
+    ]);
+    const performersBlock = formatTopPerformersBlock(performers, language);
+    const editsBlock = formatRecentEditsBlock(edits, language);
+    if (editsBlock) userMessage = editsBlock + userMessage;
+    if (performersBlock) userMessage = performersBlock + userMessage;
   }
 
   // Bilingual mode: Roodjino's audience straddles English and French. When
@@ -326,5 +412,6 @@ module.exports = {
   MODEL,
   invalidateKbCache,
   invalidateTopPerformersCache,
+  invalidateRecentEditsCache,
   getKnowledgeBaseBlock,
 };

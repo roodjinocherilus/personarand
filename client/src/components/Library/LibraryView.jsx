@@ -227,6 +227,17 @@ function LibraryRow({ row, query, onOpen, onGenerateSimilar, onRate }) {
                 </span>
               </>
             )}
+            {row.posted_version_en && row.posted_version_en !== row.body && (
+              <>
+                <span>·</span>
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-success/40 bg-success/5 text-success text-[10px] font-medium"
+                  title="You saved an edited version — the AI is learning from this"
+                >
+                  ✎ edited
+                </span>
+              </>
+            )}
             {row.calendar_title && (<><span>·</span><span>Week {row.calendar_week}: {row.calendar_title}</span></>)}
             <span>·</span>
             <span>{new Date(row.created_at).toLocaleString()}</span>

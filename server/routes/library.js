@@ -1,6 +1,6 @@
 const express = require('express');
 const { openDb } = require('../db');
-const { generate, invalidateTopPerformersCache } = require('../lib/anthropic');
+const { generate, invalidateTopPerformersCache, invalidateRecentEditsCache } = require('../lib/anthropic');
 
 const router = express.Router();
 
@@ -139,7 +139,17 @@ router.get('/:id', async (req, res, next) => {
 router.post('/:id', async (req, res, next) => {
   try {
     const db = openDb();
-    const { body, body_fr, title, title_fr, status, performance_notes, performance } = req.body || {};
+    const {
+      body,
+      body_fr,
+      title,
+      title_fr,
+      status,
+      performance_notes,
+      performance,
+      posted_version_en,
+      posted_version_fr,
+    } = req.body || {};
     const existing = await db.prepare('SELECT * FROM generated_content WHERE id = ?').get([req.params.id]);
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
@@ -149,9 +159,18 @@ router.post('/:id', async (req, res, next) => {
       return res.status(400).json({ error: `performance must be one of: poor, good, strong (got: ${performance})` });
     }
 
+    // First-time posted transition → stamp posted_at. Later status flips don't
+    // re-stamp, because we're capturing "when did this first go live" not
+    // "when was it last touched".
+    const firstPostedTransition = status === 'posted' && existing.status !== 'posted';
+
     await db.prepare(`
       UPDATE generated_content
-      SET body = ?, body_fr = ?, title = ?, title_fr = ?, status = ?, performance_notes = ?, performance = ?, updated_at = CURRENT_TIMESTAMP
+      SET body = ?, body_fr = ?, title = ?, title_fr = ?, status = ?,
+          performance_notes = ?, performance = ?,
+          posted_version_en = ?, posted_version_fr = ?,
+          posted_at = COALESCE(?::timestamptz, posted_at),
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([
       body ?? existing.body,
@@ -161,6 +180,9 @@ router.post('/:id', async (req, res, next) => {
       status ?? existing.status,
       performance_notes ?? existing.performance_notes,
       performance !== undefined ? performance : existing.performance,
+      posted_version_en !== undefined ? posted_version_en : existing.posted_version_en,
+      posted_version_fr !== undefined ? posted_version_fr : existing.posted_version_fr,
+      firstPostedTransition ? new Date().toISOString() : null,
       req.params.id,
     ]);
 
@@ -187,6 +209,14 @@ router.post('/:id', async (req, res, next) => {
     // generation call sees the fresh list without waiting 60s.
     if (performance !== undefined && performance !== existing.performance) {
       invalidateTopPerformersCache();
+    }
+    // Same for posted_version changes — an edit just landed, feedback loop
+    // should see it immediately on the next generation.
+    if (
+      (posted_version_en !== undefined && posted_version_en !== existing.posted_version_en)
+      || (posted_version_fr !== undefined && posted_version_fr !== existing.posted_version_fr)
+    ) {
+      invalidateRecentEditsCache();
     }
     res.json(row);
   } catch (e) { next(e); }
