@@ -222,6 +222,32 @@ router.post('/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const db = openDb();
+    // Find out what we're deleting before we do it — needed to invalidate caches
+    // and to log lineage for anything that referenced this row.
+    const existing = await db.prepare('SELECT id, performance, content_type FROM generated_content WHERE id = ?').get([req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    // Detach children (repurposed derivatives) so we don't cascade-kill them.
+    // Schema uses ON DELETE SET NULL so this is the safe default, but be
+    // explicit here to keep intent obvious.
+    await db.prepare('UPDATE generated_content SET parent_content_id = NULL WHERE parent_content_id = ?').run([req.params.id]);
+    // Same for the carousel cross-link: the carousel_designs row survives
+    // but loses its back-pointer.
+    await db.prepare('UPDATE carousel_designs SET content_id = NULL WHERE content_id = ?').run([req.params.id]);
+
+    await db.prepare('DELETE FROM generated_content WHERE id = ?').run([req.params.id]);
+
+    // If the deleted row was a strong-rated performer, top-performers cache
+    // is now stale.
+    if (existing.performance === 'strong') invalidateTopPerformersCache();
+
+    res.json({ ok: true, deleted_id: Number(req.params.id) });
+  } catch (e) { next(e); }
+});
+
 /**
  * POST /api/content/:id/repurpose
  * Turn an existing post into a derivative format — X thread, IG caption,

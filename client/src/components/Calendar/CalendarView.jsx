@@ -214,7 +214,12 @@ export default function CalendarView() {
       {generateFor && (
         <GenerateModal
           item={generateFor}
-          onClose={() => setGenerateFor(null)}
+          onClose={() => {
+            setGenerateFor(null);
+            // Reload calendar so the card reflects any status change and
+            // updated content_count / posted_count after generation.
+            load();
+          }}
         />
       )}
 

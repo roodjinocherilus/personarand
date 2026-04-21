@@ -195,6 +195,7 @@ export const api = {
     },
     get: (id) => request(`/api/content/${id}`),
     update: (id, payload) => request(`/api/content/${id}`, { method: 'POST', body: payload }),
+    remove: (id) => request(`/api/content/${id}`, { method: 'DELETE' }),
     rate: (id, performance) => request(`/api/content/${id}`, { method: 'POST', body: { performance } }),
     translateFr: (id) => request(`/api/content/${id}/translate-fr`, { method: 'POST' }),
     repurpose: (id, payload) => request(`/api/content/${id}/repurpose`, { method: 'POST', body: payload }),

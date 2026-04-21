@@ -54,6 +54,22 @@ router.post('/content', async (req, res, next) => {
     const firstLine = (topic || '').split('\n')[0].trim();
     const title = (providedTitle || firstLine || `${type} / ${platform || 'multi'}`).slice(0, 120);
 
+    // Helper: once content is generated for a calendar item, bump its status
+    // from 'planned' → 'scripted' so the calendar surface reflects the work.
+    // No-op if the item was already advanced (scripted / shot / edited / posted).
+    async function advanceCalendarStatus(db) {
+      if (!calendar_id) return;
+      try {
+        await db.prepare(`
+          UPDATE content_calendar
+          SET status = 'scripted'
+          WHERE id = ? AND status = 'planned'
+        `).run([calendar_id]);
+      } catch (err) {
+        console.warn('[generate] calendar advance failed:', err.message);
+      }
+    }
+
     // Carousel: dual-write into both generated_content AND carousel_designs so
     // the row shows in the Library (with rating + feedback loop) AND as a
     // designable deck in the Carousel Studio. Before this, generating a
@@ -71,6 +87,7 @@ router.post('/content', async (req, res, next) => {
         calendarId: calendar_id || null,
         bodyFr: frResult?.text || null,
       });
+      await advanceCalendarStatus(openDb());
       return res.json({ ...content, carousel_id: carousel.id, usage: enResult.usage, usage_fr: frResult?.usage || null, saved: true });
     }
 
@@ -103,6 +120,7 @@ router.post('/content', async (req, res, next) => {
       metadata,
     ]);
     const row = await db.prepare('SELECT * FROM generated_content WHERE id = ?').get([info.lastInsertRowid]);
+    await advanceCalendarStatus(db);
     res.json({ ...row, usage: enResult.usage, usage_fr: frResult?.usage || null, saved: true });
   } catch (err) {
     console.error('[generate]', err.message);

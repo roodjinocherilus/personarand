@@ -153,6 +153,16 @@ router.post('/generate', async (req, res, next) => {
       calendarId: calendar_id,
     });
 
+    // Auto-advance linked calendar item from planned → scripted.
+    if (calendar_id) {
+      try {
+        const db = openDb();
+        await db.prepare(`UPDATE content_calendar SET status = 'scripted' WHERE id = ? AND status = 'planned'`).run([calendar_id]);
+      } catch (err) {
+        console.warn('[carousel/generate] calendar advance failed:', err.message);
+      }
+    }
+
     res.json({ ...carousel, content_id: content.id, raw: result.text, usage: result.usage, saved: true });
   } catch (err) { next(err); }
 });

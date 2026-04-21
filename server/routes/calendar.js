@@ -9,13 +9,22 @@ router.get('/', async (req, res, next) => {
     const { week, platform, funnel_layer, status } = req.query;
     const clauses = [];
     const params = {};
-    if (week) { clauses.push('week = @week'); params.week = Number(week); }
-    if (status) { clauses.push('status = @status'); params.status = status; }
-    if (funnel_layer) { clauses.push('funnel_layer ILIKE @funnel_layer'); params.funnel_layer = `%${funnel_layer}%`; }
-    if (platform) { clauses.push('platforms::text ILIKE @platform'); params.platform = `%${platform}%`; }
+    if (week) { clauses.push('cc.week = @week'); params.week = Number(week); }
+    if (status) { clauses.push('cc.status = @status'); params.status = status; }
+    if (funnel_layer) { clauses.push('cc.funnel_layer ILIKE @funnel_layer'); params.funnel_layer = `%${funnel_layer}%`; }
+    if (platform) { clauses.push('cc.platforms::text ILIKE @platform'); params.platform = `%${platform}%`; }
 
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    const rows = await db.prepare(`SELECT * FROM content_calendar ${where} ORDER BY week, id`).all(params);
+    // Attach draft + posted counts so the calendar UI can show badges without
+    // re-fetching the whole library for every card.
+    const rows = await db.prepare(`
+      SELECT cc.*,
+        COALESCE((SELECT COUNT(*) FROM generated_content gc WHERE gc.calendar_id = cc.id), 0) AS content_count,
+        COALESCE((SELECT COUNT(*) FROM generated_content gc WHERE gc.calendar_id = cc.id AND gc.status = 'posted'), 0) AS posted_count
+      FROM content_calendar cc
+      ${where}
+      ORDER BY cc.week, cc.id
+    `).all(params);
     res.json(rows.map(hydrate));
   } catch (e) { next(e); }
 });

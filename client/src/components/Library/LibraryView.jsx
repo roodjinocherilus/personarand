@@ -65,6 +65,17 @@ export default function LibraryView() {
     }
   }
 
+  async function handleDelete(row) {
+    const preview = (row.title || 'Untitled').slice(0, 60);
+    if (!confirm(`Delete "${preview}"?\n\nThis removes the content from the Library. Any carousel design linked to it loses its back-reference but stays in the Carousel Studio. Cannot be undone.`)) return;
+    try {
+      await api.library.remove(row.id);
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`);
+    }
+  }
+
   function handleGenerateSimilar(row) {
     setGenerateSeed({
       type: row.content_type || 'linkedin-short',
@@ -178,6 +189,7 @@ export default function LibraryView() {
               onOpen={() => setSelected(row)}
               onGenerateSimilar={() => handleGenerateSimilar(row)}
               onRate={(p) => handleRate(row, p)}
+              onDelete={() => handleDelete(row)}
             />
           ))}
         </div>
@@ -206,7 +218,7 @@ function Field({ label, children, className = '' }) {
   );
 }
 
-function LibraryRow({ row, query, onOpen, onGenerateSimilar, onRate }) {
+function LibraryRow({ row, query, onOpen, onGenerateSimilar, onRate, onDelete }) {
   const excerpt = buildExcerpt(row.body || '', query, 180);
   return (
     <div className={`card-pad hover:border-[#555] transition-colors ${row.performance === 'strong' ? 'border-success/40 bg-success/5' : ''}`}>
@@ -254,12 +266,21 @@ function LibraryRow({ row, query, onOpen, onGenerateSimilar, onRate }) {
         <div className="flex flex-col items-end gap-2 shrink-0">
           <span className={`pill ${statusPill(row.status)}`}>{row.status}</span>
           <RatingButtons performance={row.performance} onRate={onRate} />
-          <button
-            className="btn-ghost text-xs"
-            onClick={(e) => { e.stopPropagation(); onGenerateSimilar(); }}
-          >
-            Generate similar
-          </button>
+          <div className="flex gap-1">
+            <button
+              className="btn-ghost text-xs"
+              onClick={(e) => { e.stopPropagation(); onGenerateSimilar(); }}
+            >
+              Generate similar
+            </button>
+            <button
+              className="btn-ghost text-xs text-danger hover:!text-danger"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              title="Delete this content row (cannot be undone)"
+            >
+              Delete
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -339,17 +360,36 @@ function statusPill(status) {
 }
 
 function SelectedModal({ row, onClose }) {
+  async function handleDelete() {
+    const preview = (row.title || 'Untitled').slice(0, 60);
+    if (!confirm(`Delete "${preview}"?\n\nThis removes the content from the Library. Cannot be undone.`)) return;
+    try {
+      await api.library.remove(row.id);
+      onClose();
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`);
+    }
+  }
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 md:p-8 overflow-y-auto bg-black/70">
       <div className="card w-full max-w-4xl my-4">
-        <div className="px-6 py-4 border-b border-border flex items-start justify-between">
+        <div className="px-6 py-4 border-b border-border flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[11px] uppercase tracking-widest text-text-secondary">
               {row.platform || 'multi'} · {row.content_type}
             </div>
             <div className="text-lg font-semibold mt-1 truncate">{row.title}</div>
           </div>
-          <button className="btn-ghost" onClick={onClose}>✕</button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              className="btn-ghost text-xs text-danger hover:!text-danger"
+              onClick={handleDelete}
+              title="Delete this content (cannot be undone)"
+            >
+              Delete
+            </button>
+            <button className="btn-ghost" onClick={onClose}>✕</button>
+          </div>
         </div>
         <div className="p-6">
           <ContentEditor
