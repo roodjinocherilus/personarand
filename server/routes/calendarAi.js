@@ -88,12 +88,14 @@ No code fences. Aim for ~${weeklyTotal * weeks} items total.`;
  * position on. Distinct from /brainstorm (which is evergreen ideation):
  *   - timing-aware ("this week", "same-day if possible")
  *   - requires a POSITION, not neutral commentary
+ *   - requires an EVIDENCE BASIS — data, concrete examples, checkable claims;
+ *     reactive posts travel furthest and get scrutinized hardest
  *   - filtered through brand voice + doctrine (Architect Tax, Distribution
  *     Debt, etc.) and Haiti lens where applicable
  *   - platform bias toward X / LinkedIn where reactive content lives
  *
  * Body: { source: string (required, 10+ chars), count?: number (default 4),
- *         platforms?: string[], funnel_layers?: string[] }
+ *         platforms?: string[], funnel_layers?: string[], facts?: string (optional) }
  */
 router.post('/reactive-angles', async (req, res, next) => {
   try {
@@ -102,6 +104,7 @@ router.post('/reactive-angles', async (req, res, next) => {
       count = 4,
       platforms = PLATFORMS,
       funnel_layers = Object.keys(FUNNEL_TARGETS_WEEKLY),
+      facts,
     } = req.body || {};
     if (!source || source.trim().length < 10) {
       return res.status(400).json({ error: 'source (URL / headline / observation, 10+ chars) required' });
@@ -109,20 +112,35 @@ router.post('/reactive-angles', async (req, res, next) => {
 
     const topic = `Generate ${count} REACTIVE post angles in response to what's happening right now.
 
-SOURCE (the thing you're reacting to — a news story, a launch, a thread, an observation):
+SOURCE (the thing you're reacting to):
 ---
 ${source.trim()}
 ---
+${facts && facts.trim() ? `
+SUPPORTING DATA / FACTS the writer has on hand (integrate these into angles that need them — do not invent additional numbers):
+---
+${facts.trim()}
+---
+` : ''}
+This is TIMELY commentary — the post will go out within 24-72 hours of the source event. Reactive posts get the most engagement AND the most scrutiny; they are where personal brands either break out or get publicly corrected. Treat every angle like it will be cross-examined by someone who wants to prove you wrong.
 
-This is TIMELY commentary — the post will go out within 24-72 hours of the source event. Treat it that way.
+Rules for every angle:
 
-Rules:
-- Every angle must TAKE A POSITION. No neutral recap. No "interesting development" hot takes. The reader should close the post knowing what the writer thinks and why.
-- Filter through the brand voice + doctrine. If the source touches infrastructure / distribution / architecture / AI / Haiti / operator-class realities, bring the relevant framework to bear (Architect Tax, Distribution Debt, Legibility Gap, Operational Aesthetics, etc.) — don't invent new frameworks when an existing one already cuts the problem.
-- Apply the Haiti lens when the source genuinely warrants it. Don't force Haiti into an angle where it adds no edge. When it fits, it fits hard.
-- Reactive content lives best on X and LinkedIn. Carousels and long-form videos are poor fits for 24-hour reactive content unless the source is a genuinely important structural moment.
-- Each angle must be directly postable — a clear takeable position, not a topic.
-- If none of the angles feel right because the source is weak, say so: return fewer angles rather than forcing ${count}.
+1. TAKE A POSITION. No neutral recap. No "interesting development" hot takes. The reader should close the post knowing what the writer thinks and why.
+
+2. EVIDENCE-BASED. Every position must be defensible. Specify WHAT would ground it: a specific number, a named example, a verifiable claim, a mechanism the writer can explain. If the source provides data, use it. If the user supplied facts above, anchor the angle in those facts. Do NOT generate angles where the core claim would require fabricated statistics to defend. If an angle is more opinion-than-fact, mark it as analytical and flag what observation supports it.
+
+3. ANTICIPATE THE COUNTER. Every reactive take has an obvious rebuttal. The strongest angles name the rebuttal inline and address it, not as a defense but as a sharper framing. Weak angles leave the counter-argument waiting in the comments.
+
+4. NO HEDGE LANGUAGE. "Arguably," "it could be said," "many believe" — all dead. Write like someone who has already concluded. If the writer isn't confident enough to stop hedging, skip the angle.
+
+5. FRAMEWORK OVER NOVELTY. Filter through the brand voice + doctrine. If the source touches infrastructure / distribution / architecture / AI / Haiti / operator-class realities, bring the relevant existing framework to bear (Architect Tax, Distribution Debt, Legibility Gap, Operational Aesthetics, Constraint-as-X-Ray, etc.). Do NOT invent new frameworks for a one-off reactive post.
+
+6. HAITI LENS, only when warranted. When the source genuinely intersects Haitian context, the Haiti framing is a differentiator. When it doesn't, forcing Haiti into the angle weakens the post.
+
+7. PLATFORM FIT. Reactive content lives on X and LinkedIn. Carousels and long-form videos are poor fits for 24-72h windows unless the source is a genuinely structural moment.
+
+8. REJECT WEAK SOURCES. If the source does not support ${count} angles that meet the above bars, return FEWER than ${count}. Padding with forced hot takes is how the personal brand gets publicly embarrassed. Return 1 strong angle over 4 mediocre ones.
 
 PLATFORMS ALLOWED:
 ${platforms.join(', ')}
@@ -130,10 +148,12 @@ ${platforms.join(', ')}
 FUNNEL LAYERS:
 ${funnel_layers.join(', ')}`;
 
-    const extra = `Return ONLY a JSON array of up to ${count} objects (fewer if the source doesn't support ${count} strong positions):
+    const extra = `Return ONLY a JSON array of up to ${count} objects (fewer if the source / facts don't support ${count} defensible positions):
 {
-  "title": "short working title 4-10 words — must capture the position, not the topic",
+  "title": "short working title 4-10 words — must capture the POSITION, not the topic",
   "position": "the specific take in one sentence — what does this post argue",
+  "evidence_basis": "one sentence naming WHAT grounds the position: a specific number the writer would cite, a named example, a verifiable mechanism, or an explicit note that this is analytical interpretation of the source. If the angle cannot be defended without invented data, do NOT return it.",
+  "counter_argument": "one sentence naming the strongest rebuttal someone would deploy against this take, and how the post should address it",
   "why_it_works": "one sentence on why this angle cuts now (timing, positioning, framework fit)",
   "content_type": "linkedin-long" | "linkedin-short" | "x-thread" | "x-standalone" | "instagram-caption" | "carousel" | "video-clip",
   "platforms": [...],

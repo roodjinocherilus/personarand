@@ -24,6 +24,7 @@ const PLATFORMS = ['LinkedIn', 'X', 'Instagram', 'Instagram Reels', 'TikTok', 'Y
  */
 export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) {
   const [source, setSource] = useState('');
+  const [facts, setFacts] = useState('');
   const [platforms, setPlatforms] = useState(['LinkedIn', 'X']);
   const [count, setCount] = useState(4);
   const [targetWeek, setTargetWeek] = useState(defaultWeek || 1);
@@ -51,6 +52,7 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
         source: source.trim(),
         count,
         platforms,
+        facts: facts.trim() || undefined,
       });
       if (r.parse_error) {
         setError(`The AI didn\'t return parsable angles: ${r.parse_error}. Try rephrasing the source or giving more context.`);
@@ -120,13 +122,18 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
         tone: 'sharp',
         length: 'medium',
         funnel_layer: angle.funnel_layer || 'Authority',
-        extra: angle.position ? `Specific position to take: ${angle.position}` : undefined,
+        extra: [
+          angle.position && `Specific position to take: ${angle.position}`,
+          angle.evidence_basis && `Evidence grounding: ${angle.evidence_basis}`,
+        ].filter(Boolean).join('\n\n') || undefined,
         // Crucial: DO NOT pass the raw source as title. Let the backend
         // derive a clean hook-based title from the generated body itself.
         // Passing source text produced garbage titles like the full source
         // string truncated to 80 chars.
         title: angle.title || undefined,
         reactive_source: source.trim(),
+        reactive_facts: facts.trim() || undefined,
+        reactive_counter_argument: angle.counter_argument || undefined,
         save: true,
       };
       const row = await api.generate.content(payload);
@@ -194,15 +201,33 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
         </div>
 
         {/* Source input stays visible across all steps for context */}
-        <div className="px-6 pt-4 pb-3 border-b border-border/60 bg-[#0f0f0f]">
-          <div className="label">Source — URL, headline, thread excerpt, or your own observation</div>
-          <textarea
-            className="input font-mono text-xs min-h-[80px]"
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            placeholder={`Examples:\n• https://techcrunch.com/2026/04/… (just paste the link)\n• "OpenAI launched a new agentic model today — it can..."\n• "Someone on X is claiming Haitian fintech can't scale because..."`}
-            disabled={loading || writing}
-          />
+        <div className="px-6 pt-4 pb-3 border-b border-border/60 bg-[#0f0f0f] space-y-3">
+          <div>
+            <div className="label">Source — URL, headline, thread excerpt, or your own observation</div>
+            <textarea
+              className="input font-mono text-xs min-h-[80px]"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              placeholder={`Examples:\n• https://techcrunch.com/2026/04/… (just paste the link)\n• "OpenAI launched a new agentic model today — it can..."\n• "Someone on X is claiming Haitian fintech can't scale because..."`}
+              disabled={loading || writing}
+            />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="label !mb-0">Supporting data & facts (optional — but strongly recommended)</div>
+              <span className="text-[10px] text-amber-400">⚡ reactive posts get scrutinized hardest</span>
+            </div>
+            <textarea
+              className="input font-mono text-xs min-h-[60px] mt-1"
+              value={facts}
+              onChange={(e) => setFacts(e.target.value)}
+              placeholder={`Numbers, dates, named examples, sources the AI should cite. Examples:\n• "Stripe reported $1.4T in volume in 2025; Shopify merchants averaged 43% YoY growth."\n• "Per Haiti Tech Summit 2026: 23 active media properties, 13 actif, only SPORO is Major."\n• "OpenAI's launch post dated April 21; Bloomberg confirmed $500M revenue run-rate."`}
+              disabled={loading || writing}
+            />
+            <div className="text-[10px] text-text-secondary mt-1 leading-relaxed">
+              The AI won't invent statistics. Paste the numbers, dates, and named examples you want cited so the post can be defended under criticism.
+            </div>
+          </div>
         </div>
 
         {step === 'input' && (
@@ -388,8 +413,20 @@ function AngleCard({ angle, onAddToCalendar, onWriteNow }) {
               {angle.position}
             </div>
           )}
+          {angle.evidence_basis && (
+            <div className="text-[12px] mt-1.5 leading-snug text-emerald-300/90">
+              <span className="text-emerald-400 font-semibold text-[11px] uppercase tracking-wider">Evidence · </span>
+              {angle.evidence_basis}
+            </div>
+          )}
+          {angle.counter_argument && (
+            <div className="text-[12px] mt-1.5 leading-snug text-rose-300/90">
+              <span className="text-rose-400 font-semibold text-[11px] uppercase tracking-wider">Counter · </span>
+              {angle.counter_argument}
+            </div>
+          )}
           {angle.why_it_works && (
-            <div className="text-[11px] text-text-secondary mt-1.5 leading-snug">
+            <div className="text-[11px] text-text-secondary mt-1.5 leading-snug italic">
               {angle.why_it_works}
             </div>
           )}
