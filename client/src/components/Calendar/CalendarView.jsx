@@ -214,6 +214,11 @@ export default function CalendarView() {
             } catch (err) { alert(`Delete failed: ${err.message}`); }
           }}
           onStatusChange={(status) => handleStatusChange(activeItem.id, status)}
+          onItemUpdated={async (updated) => {
+            setActiveItem(updated);
+            // Reload so the card in the main grid reflects edits too.
+            await load();
+          }}
         />
       )}
 
@@ -256,57 +261,309 @@ function Field({ label, children }) {
   );
 }
 
-function DetailDrawer({ item, onClose, onGenerate, onDeepen, onDelete, onStatusChange }) {
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const CONTENT_TYPES = [
+  'linkedin-short', 'linkedin-long', 'x-thread', 'x-standalone',
+  'instagram-caption', 'carousel',
+  'video-hook-beats', 'video-word-for-word', 'youtube-essay',
+  'article',
+];
+const FUNNEL_LAYERS = ['Discovery', 'Authority', 'Trust', 'Conversion', 'Identity'];
+const ALL_PLATFORMS = ['LinkedIn', 'X', 'Instagram', 'Instagram Reels', 'TikTok', 'YouTube'];
+
+function DetailDrawer({ item, onClose, onGenerate, onDeepen, onDelete, onStatusChange, onItemUpdated }) {
+  const [mode, setMode] = useState('view'); // 'view' | 'edit' | 'refine'
+  const [draft, setDraft] = useState({
+    title: item.title || '',
+    description: item.description || '',
+    week: item.week || 1,
+    day: item.day || '',
+    content_type: item.content_type || 'linkedin-short',
+    funnel_layer: item.funnel_layer || 'Discovery',
+    platforms: Array.isArray(item.platforms) ? [...item.platforms] : [],
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Refine-brief state
+  const [refineFeedback, setRefineFeedback] = useState('');
+  const [refining, setRefining] = useState(false);
+
+  // Re-seed draft when the active item changes (user clicks a different card).
+  useEffect(() => {
+    setDraft({
+      title: item.title || '',
+      description: item.description || '',
+      week: item.week || 1,
+      day: item.day || '',
+      content_type: item.content_type || 'linkedin-short',
+      funnel_layer: item.funnel_layer || 'Discovery',
+      platforms: Array.isArray(item.platforms) ? [...item.platforms] : [],
+    });
+    setMode('view');
+    setError(null);
+    setRefineFeedback('');
+  }, [item.id]);
+
+  async function saveEdits() {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.calendar.update(item.id, draft);
+      setMode('view');
+      if (onItemUpdated) onItemUpdated(updated);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRefineBrief() {
+    if (!refineFeedback.trim() || refineFeedback.trim().length < 3) {
+      setError('Tell the AI at least a few words about what to change.');
+      return;
+    }
+    setRefining(true);
+    setError(null);
+    try {
+      const r = await api.calendar.refineBrief(item.id, { feedback: refineFeedback.trim() });
+      const fresh = await api.calendar.get(item.id);
+      setDraft((prev) => ({ ...prev, title: fresh.title, description: fresh.description }));
+      setRefineFeedback('');
+      if (onItemUpdated) onItemUpdated(fresh);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRefining(false);
+    }
+  }
+
+  function togglePlatform(p) {
+    setDraft((prev) => ({
+      ...prev,
+      platforms: prev.platforms.includes(p)
+        ? prev.platforms.filter((x) => x !== p)
+        : [...prev.platforms, p],
+    }));
+  }
+
+  const isEditing = mode === 'edit';
+  const isRefining = mode === 'refine';
+
   return (
     <div className="fixed inset-0 z-40 flex">
       <div className="flex-1 bg-black/60" onClick={onClose} />
       <div className="w-full max-w-xl bg-card border-l border-border p-6 overflow-y-auto">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-widest text-text-secondary">Week {item.week} · {item.day}</div>
-            <h2 className="text-xl font-semibold mt-2 leading-tight">{item.title}</h2>
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] uppercase tracking-widest text-text-secondary">
+              Week {isEditing ? draft.week : item.week}
+              {(isEditing ? draft.day : item.day) ? ` · ${isEditing ? draft.day : item.day}` : ''}
+            </div>
+            {isEditing ? (
+              <textarea
+                className="input mt-2 text-xl font-semibold leading-tight"
+                value={draft.title}
+                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                rows={2}
+              />
+            ) : (
+              <h2 className="text-xl font-semibold mt-2 leading-tight">{item.title}</h2>
+            )}
           </div>
-          <button className="btn-ghost" onClick={onClose}>✕</button>
+          <div className="flex items-center gap-2 shrink-0">
+            {mode === 'view' && (
+              <>
+                <button
+                  className="btn-ghost text-xs"
+                  onClick={() => setMode('refine')}
+                  title="Give AI specific feedback to revise the brief"
+                >
+                  ✎ AI refine
+                </button>
+                <button
+                  className="btn-ghost text-xs"
+                  onClick={() => setMode('edit')}
+                  title="Edit the direction, title, day, type, platforms manually"
+                >
+                  Edit
+                </button>
+              </>
+            )}
+            <button className="btn-ghost" onClick={onClose}>✕</button>
+          </div>
         </div>
-        <p className="text-text-secondary mt-4 leading-relaxed">{item.description}</p>
 
-        <div className="grid grid-cols-2 gap-4 mt-6">
-          <Meta label="Content type" value={item.content_type} />
-          <Meta label="Funnel layer" value={item.funnel_layer} />
-          <Meta label="Platforms" value={(item.platforms || []).join(', ')} />
-          <Meta label="Status" value={item.status} />
-        </div>
+        {/* Brief / description */}
+        {isEditing ? (
+          <div className="mt-4">
+            <div className="label">Brief / direction</div>
+            <textarea
+              className="input min-h-[140px]"
+              value={draft.description}
+              onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+              placeholder="1-3 sentences: the angle, the specific claim, the reader takeaway"
+            />
+          </div>
+        ) : (
+          <p className="text-text-secondary mt-4 leading-relaxed whitespace-pre-wrap">{item.description || '(no brief)'}</p>
+        )}
 
-        <div className="mt-6">
-          <div className="label">Update status</div>
-          <div className="flex flex-wrap gap-2">
-            {STATUSES.map((s) => (
-              <button
-                key={s}
-                className={`pill transition-colors ${
-                  item.status === s
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border text-text-secondary hover:text-text-primary hover:border-[#555]'
-                }`}
-                onClick={() => onStatusChange(s)}
+        {/* Edit fields */}
+        {isEditing && (
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div>
+              <div className="label">Week #</div>
+              <input
+                type="number" min={1} max={52}
+                className="input font-mono"
+                value={draft.week}
+                onChange={(e) => setDraft({ ...draft, week: Number(e.target.value) || 1 })}
+              />
+            </div>
+            <div>
+              <div className="label">Day</div>
+              <select
+                className="input"
+                value={draft.day || ''}
+                onChange={(e) => setDraft({ ...draft, day: e.target.value })}
               >
-                {s}
-              </button>
-            ))}
+                <option value="">(none)</option>
+                {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="label">Content type</div>
+              <select
+                className="input"
+                value={draft.content_type}
+                onChange={(e) => setDraft({ ...draft, content_type: e.target.value })}
+              >
+                {CONTENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="label">Funnel layer</div>
+              <select
+                className="input"
+                value={draft.funnel_layer}
+                onChange={(e) => setDraft({ ...draft, funnel_layer: e.target.value })}
+              >
+                {FUNNEL_LAYERS.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <div className="label">Platforms (click to toggle)</div>
+              <div className="flex flex-wrap gap-2">
+                {ALL_PLATFORMS.map((p) => {
+                  const on = draft.platforms.includes(p);
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`pill transition-colors ${on ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-secondary hover:text-text-primary hover:border-[#555]'}`}
+                      onClick={() => togglePlatform(p)}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-1 gap-2 mt-8">
-          <button className="btn" onClick={onDeepen}>🔍 Deepen this brief (outline + angles + counter-args)</button>
-          <button className="btn-primary" onClick={onGenerate}>
-            Generate content with Claude Opus 4.7 →
-          </button>
-          {onDelete && (
-            <button className="btn-ghost text-danger text-xs mt-2" onClick={onDelete}>
-              Delete this calendar item
+        {/* View-mode metadata */}
+        {!isEditing && (
+          <div className="grid grid-cols-2 gap-4 mt-6">
+            <Meta label="Content type" value={item.content_type} />
+            <Meta label="Funnel layer" value={item.funnel_layer} />
+            <Meta label="Platforms" value={(item.platforms || []).join(', ')} />
+            <Meta label="Status" value={item.status} />
+          </div>
+        )}
+
+        {/* Refine-brief panel */}
+        {isRefining && (
+          <div className="mt-5 p-4 rounded-md border border-primary/40 bg-primary/5 space-y-2">
+            <div className="flex items-start justify-between">
+              <div className="text-sm text-primary font-semibold">Refine brief with AI</div>
+              <button className="btn-ghost text-[11px]" onClick={() => { setMode('view'); setRefineFeedback(''); setError(null); }}>
+                Dismiss
+              </button>
+            </div>
+            <div className="text-[11px] text-text-secondary leading-relaxed">
+              Tell the AI specifically how to change this day's direction. It keeps what works and only fixes what you call out. Don't worry — it won't overwrite content_type / funnel_layer / platforms, just title + brief.
+            </div>
+            <textarea
+              className="input text-sm min-h-[80px]"
+              value={refineFeedback}
+              onChange={(e) => setRefineFeedback(e.target.value)}
+              placeholder={`e.g. make this Haiti-specific · drop the "everyone's doing this" framing · pivot to a case-study angle · more counter-intuitive hook · shorter, sharper`}
+              disabled={refining}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11px] text-text-secondary">Uses Opus 4.7 · feedback loop on.</div>
+              <button
+                className="btn-primary text-sm"
+                onClick={handleRefineBrief}
+                disabled={refining || refineFeedback.trim().length < 3}
+              >
+                {refining ? 'Revising…' : 'Apply feedback'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {error && <div className="text-danger text-xs mt-3">{error}</div>}
+
+        {/* Edit save/cancel */}
+        {isEditing && (
+          <div className="flex justify-end gap-2 mt-5">
+            <button className="btn" onClick={() => setMode('view')} disabled={saving}>Cancel</button>
+            <button className="btn-primary" onClick={saveEdits} disabled={saving}>
+              {saving ? 'Saving…' : 'Save changes'}
             </button>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Status controls (always visible) */}
+        {!isEditing && (
+          <div className="mt-6">
+            <div className="label">Update status</div>
+            <div className="flex flex-wrap gap-2">
+              {STATUSES.map((s) => (
+                <button
+                  key={s}
+                  className={`pill transition-colors ${
+                    item.status === s
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-text-secondary hover:text-text-primary hover:border-[#555]'
+                  }`}
+                  onClick={() => onStatusChange(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Primary actions */}
+        {!isEditing && (
+          <div className="grid grid-cols-1 gap-2 mt-8">
+            <button className="btn" onClick={onDeepen}>🔍 Deepen this brief (outline + angles + counter-args)</button>
+            <button className="btn-primary" onClick={onGenerate}>
+              Generate content with Claude Opus 4.7 →
+            </button>
+            {onDelete && (
+              <button className="btn-ghost text-danger text-xs mt-2" onClick={onDelete}>
+                Delete this calendar item
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -73,6 +73,7 @@ export const api = {
     planMonth: (payload) => request('/api/calendar-ai/plan-month', { method: 'POST', body: payload }),
     brainstorm: (payload) => request('/api/calendar-ai/brainstorm', { method: 'POST', body: payload }),
     deepen: (id) => request(`/api/calendar-ai/${id}/deepen`, { method: 'POST' }),
+    refineBrief: (id, payload) => request(`/api/calendar-ai/${id}/refine-brief`, { method: 'POST', body: payload }),
     gaps: () => request('/api/calendar-ai/gaps'),
     reseed: (force = false) => request('/api/calendar-ai/reseed', { method: 'POST', body: { force } }),
   },

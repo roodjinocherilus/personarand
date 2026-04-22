@@ -155,6 +155,95 @@ No code fences.`;
   } catch (err) { next(err); }
 });
 
+/**
+ * POST /api/calendar-ai/:id/refine-brief
+ *
+ * Revise a specific calendar item's brief (title + description) based on
+ * user feedback. Same "iterate, don't rewrite" pattern as the content refine:
+ * the AI keeps what works about the current brief and only changes what
+ * the feedback calls out.
+ *
+ * Body: { feedback: string (≥3 chars), scope?: 'brief'|'title'|'both' }
+ * Returns: { title, description, usage }
+ */
+router.post('/:id/refine-brief', async (req, res, next) => {
+  try {
+    const db = openDb();
+    const { feedback, scope = 'both' } = req.body || {};
+    if (!feedback || feedback.trim().length < 3) {
+      return res.status(400).json({ error: 'feedback must be at least 3 characters' });
+    }
+
+    const item = await db.prepare('SELECT * FROM content_calendar WHERE id = ?').get([req.params.id]);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+
+    const topic = `Revise a calendar item's brief for Roodjino's content plan.
+
+CURRENT CALENDAR ITEM:
+---
+Title: ${item.title || '(untitled)'}
+Week ${item.week || 1} ${item.day ? `· ${item.day}` : ''} · ${item.content_type || 'post'} · ${item.funnel_layer || 'Discovery'}
+Platforms: ${(Array.isArray(item.platforms) ? item.platforms : []).join(', ') || 'not specified'}
+
+Brief: ${item.description || '(no brief)'}
+---
+
+USER FEEDBACK ON THIS BRIEF:
+---
+${feedback}
+---
+
+Your task: revise the title and brief to address the feedback. Keep what works. Only change what the feedback calls out or implies. Do NOT start from scratch — iterate on the existing brief. Preserve the content_type, funnel_layer, and platforms unless the feedback explicitly asks you to rethink those too.
+
+A strong brief is 1-3 sentences that capture: the angle, the specific claim/insight, and the reader takeaway. Concrete over abstract. Specific over generic.`;
+
+    const extra = `Return ONLY a JSON object:
+{
+  "title": "short working title (4-10 words)",
+  "description": "the revised brief — 1-3 sentences, concrete"
+}
+No code fences, no commentary.`;
+
+    const result = await generate({
+      type: 'article',
+      platform: 'calendar',
+      topic,
+      tone: 'sharp',
+      length: 'short',
+      extra,
+      useFeedbackLoop: true,
+    });
+
+    const cleaned = result.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return res.status(500).json({ parse_error: 'Could not parse JSON output from AI', raw: result.text });
+    }
+
+    const newTitle = (parsed.title || item.title || 'Untitled').slice(0, 200);
+    const newDescription = (parsed.description || item.description || '').slice(0, 4000);
+
+    // Apply based on scope. Default is 'both'.
+    const setTitle = scope === 'brief' ? item.title : newTitle;
+    const setDesc = scope === 'title' ? item.description : newDescription;
+
+    await db.prepare(`
+      UPDATE content_calendar
+      SET title = ?, description = ?
+      WHERE id = ?
+    `).run([setTitle, setDesc, req.params.id]);
+
+    const updated = await db.prepare('SELECT * FROM content_calendar WHERE id = ?').get([req.params.id]);
+    res.json({
+      title: updated.title,
+      description: updated.description,
+      usage: result.usage,
+    });
+  } catch (err) { console.error('[calendar-ai/refine-brief]', err); next(err); }
+});
+
 router.get('/gaps', async (req, res, next) => {
   try {
     const db = openDb();
