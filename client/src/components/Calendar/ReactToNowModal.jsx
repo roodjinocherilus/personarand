@@ -101,6 +101,9 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
       setError('Source is too short. Add a headline or observation.');
       return;
     }
+    // Remember where we came from so failures return there instead of
+    // dumping the user on an empty angles screen when they skipped angles.
+    const returnStepOnError = isDirect ? 'input' : 'angles';
     setWriting(true);
     setWritingAngle(angleOrDirect || null);
     setStep('writing');
@@ -110,12 +113,19 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
       const payload = {
         type: angle.content_type || 'linkedin-short',
         platform: (angle.platforms && angle.platforms[0]) || 'LinkedIn',
-        topic: angle.title || 'Reactive commentary',
+        // In the angles path, topic = the angle's title + position. In the
+        // skip-angles path, leave topic undefined so the backend's reactive
+        // wrapper doesn't prepend a meaningless "Reactive commentary" string.
+        topic: angle.title ? angle.title : undefined,
         tone: 'sharp',
         length: 'medium',
         funnel_layer: angle.funnel_layer || 'Authority',
         extra: angle.position ? `Specific position to take: ${angle.position}` : undefined,
-        title: angle.title || source.trim().slice(0, 80),
+        // Crucial: DO NOT pass the raw source as title. Let the backend
+        // derive a clean hook-based title from the generated body itself.
+        // Passing source text produced garbage titles like the full source
+        // string truncated to 80 chars.
+        title: angle.title || undefined,
         reactive_source: source.trim(),
         save: true,
       };
@@ -123,9 +133,39 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
       setWrittenRow(row);
     } catch (err) {
       setError(err.message || 'Generation failed');
-      setStep('angles');
+      setStep(returnStepOnError);
     } finally {
       setWriting(false);
+    }
+  }
+
+  // Add the written post to a calendar slot. Only meaningful after the post
+  // already exists in Library (writtenRow). Creates a reactive calendar item
+  // with a reference to the content.
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
+  async function alsoAddToCalendar() {
+    if (!writtenRow) return;
+    setAdding(true);
+    try {
+      await api.calendar.create({
+        week: targetWeek,
+        day: null,
+        title: writtenRow.title || source.trim().slice(0, 80),
+        description: writingAngle?.position || writingAngle?.why_it_works || '',
+        content_type: writtenRow.content_type || 'linkedin-short',
+        platforms: writtenRow.platform ? [writtenRow.platform] : [],
+        funnel_layer: writingAngle?.funnel_layer || 'Authority',
+        status: 'scripted', // we already have content for it
+        is_reactive: true,
+        reactive_source: source.trim(),
+      });
+      setAdded(true);
+      if (onItemsAdded) onItemsAdded();
+    } catch (err) {
+      setError(`Couldn't add to calendar: ${err.message}`);
+    } finally {
+      setAdding(false);
     }
   }
 
@@ -266,8 +306,28 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
             )}
             {writtenRow && (
               <>
-                <div className="card-pad border-amber-500/30 bg-amber-500/5 text-sm text-amber-300">
-                  ⚡ Reactive post saved to Library. Edit, refine, and publish same-day.
+                <div className="card-pad border-amber-500/30 bg-amber-500/5 flex items-start justify-between gap-3 flex-wrap">
+                  <div className="text-sm text-amber-300">
+                    ⚡ Reactive post saved to Library. Edit, refine, and publish same-day.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-text-secondary">Target week:</span>
+                    <input
+                      type="number"
+                      className="input font-mono w-16 py-1 text-xs"
+                      value={targetWeek}
+                      onChange={(e) => setTargetWeek(Number(e.target.value) || 1)}
+                      min={1}
+                      disabled={adding || added}
+                    />
+                    <button
+                      className="btn text-xs"
+                      onClick={alsoAddToCalendar}
+                      disabled={adding || added}
+                    >
+                      {added ? '✓ In calendar' : adding ? 'Adding…' : 'Also add to calendar'}
+                    </button>
+                  </div>
                 </div>
                 <ContentEditor
                   initial={writtenRow}

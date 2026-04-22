@@ -72,13 +72,28 @@ Write this post as if publishing within 24-72 hours of the source event. Take a 
       });
     }
 
-    // Clean title: prefer an explicit `title` passed from the client (the
-    // calendar item's real title), then fall back to the first line of the
-    // topic (before any "\n\nBrief:" or paragraph break), then a safe default.
-    // Before this, the whole topic string (title + brief) got sliced as the
-    // saved title, producing "The Moat Moved Brief: Compressed version of…".
-    const firstLine = (topic || '').split('\n')[0].trim();
-    const title = (providedTitle || firstLine || `${type} / ${platform || 'multi'}`).slice(0, 120);
+    // Clean title. Preference order:
+    //   1. Explicit `title` passed from the client (calendar-item path).
+    //   2. First line of the GENERATED body — the hook line is almost always
+    //      a better title than a raw topic string. Matters especially for
+    //      the reactive / skip-angles path where there's no cleanly-formed
+    //      topic to fall back on.
+    //   3. First line of topic (before any "\n\nBrief:" or paragraph break).
+    //   4. Safe default based on type / platform.
+    function firstMeaningfulLine(s) {
+      return (s || '')
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l.length > 0 && l.length < 140) || '';
+    }
+    const firstLineFromTopic = (topic || '').split('\n')[0].trim();
+    const firstLineFromBody = firstMeaningfulLine(enResult.text);
+    const title = (
+      providedTitle
+      || firstLineFromBody
+      || firstLineFromTopic
+      || `${type} / ${platform || 'multi'}`
+    ).slice(0, 120);
 
     // Helper: once content is generated for a calendar item, bump its status
     // from 'planned' → 'scripted' so the calendar surface reflects the work.
