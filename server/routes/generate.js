@@ -26,11 +26,11 @@ router.post('/content', async (req, res, next) => {
     } = req.body || {};
     if (!type) return res.status(400).json({ error: 'type is required' });
 
-    // Reactive content: when reactive_source is present, reframe the user
-    // message so the AI treats this as TIMELY commentary (24-72h window)
-    // rather than evergreen content. Reactive posts travel furthest and get
-    // scrutinized hardest — the prompt enforces factual rigor, anticipates
-    // the counter-argument, and bans hedge language.
+    // Reactive content: when reactive_source is present, layer timing +
+    // cross-examination posture on top of the universal rigor already baked
+    // into the system prompt (see EVIDENTIARY RIGOR section there). We do
+    // NOT re-list the universal rules here; doing so would bloat the user
+    // message with redundant instructions Claude already has cached.
     let effectiveTopic = topic;
     let effectiveExtra = extra;
     if (reactive_source) {
@@ -39,37 +39,19 @@ router.post('/content', async (req, res, next) => {
 ${reactive_source.trim()}
 ---
 ${reactive_facts && reactive_facts.trim() ? `
-SUPPORTING DATA / FACTS the writer has on hand (integrate where it sharpens the post; do NOT paraphrase the list — weave specific numbers and named examples into the prose):
+SUPPORTING DATA / FACTS the writer has on hand. Weave these specific numbers and named examples into the prose where they sharpen the argument. Do not invent additional statistics beyond what is listed here. Do not paraphrase the list format — integrate the facts naturally:
 ---
 ${reactive_facts.trim()}
 ---
 ` : ''}${reactive_counter_argument && reactive_counter_argument.trim() ? `
-COUNTER-ARGUMENT to pre-empt inline:
+COUNTER-ARGUMENT to pre-empt inline (engage with it directly, do not leave it for the comments):
 ---
 ${reactive_counter_argument.trim()}
 ---
 ` : ''}
-Reactive posts get the most engagement AND the most scrutiny. This post will be cross-examined by people who want to prove the writer wrong. Write it accordingly.
+Reactive timing: this post publishes within 24-72 hours of the source event. The window is what makes it valuable and what makes it dangerous. Reactive posts get the most engagement AND the most scrutiny; every claim will be cross-examined by people who want to prove the writer wrong. The evidentiary rigor already established in the voice document applies with extra weight here: if a specific statistic cannot be defended, skip it or qualify it; if a named example cannot be verified, use the writer's first-person scope; if the source itself is thin, the post can be shorter rather than padded.
 
-RIGOR REQUIREMENTS (non-negotiable, all must be met):
-
-1. TAKE A POSITION. No neutral recap. No "interesting development" phrasing. The reader must close the post knowing what the writer thinks. If the writer's conclusion isn't stated explicitly somewhere in the post, the post fails.
-
-2. CITE SPECIFICS, NOT GENERALITIES. Replace vague quantifiers ("many," "some," "most") with actual numbers when the data exists. Replace unnamed actors ("some companies," "experts say") with named examples or explicit acknowledgment that the claim is the writer's own analysis. Every factual claim must be either: (a) directly from the source, (b) from the SUPPORTING DATA block above, (c) general knowledge the writer can defend, or (d) explicitly marked as the writer's interpretation ("my read is...", "what this suggests to me..."). If none of these apply, cut the claim.
-
-3. DO NOT INVENT STATISTICS. No fabricated percentages. No made-up dollar amounts. No invented company metrics. If a specific number would strengthen the post but isn't available, either skip it or frame the claim qualitatively with an honest scope ("two of the three largest Caribbean fintech rounds last quarter," if known to be true; never "78% of companies" if that figure is made up).
-
-4. NAMED EXAMPLES OVER ABSTRACTIONS. "Companies like Stripe and Shopify did X" beats "some companies did X." Use named examples the writer can defend. If an example is hypothetical, mark it ("imagine a company that...").
-
-5. ANTICIPATE THE REBUTTAL. Strong reactive posts name the obvious counter-argument inline and address it, not defensively but as a sharper framing. Weak reactive posts leave the counter in the comments. If a COUNTER-ARGUMENT block is provided above, the post must engage with it. If not provided, the writer identifies the likely counter and addresses it.
-
-6. NO HEDGE LANGUAGE. Remove: "arguably," "it could be said," "many might argue," "some would say," "I think maybe," "perhaps." Replace with direct assertion: "X is true because Y" or "I think X." Hedge language is how confident takes get diluted into nothing.
-
-7. USE EXISTING FRAMEWORK, NAMED. Filter through the brand voice + doctrine. When a framework from the system prompt (Architect Tax, Distribution Debt, Legibility Gap, Operational Aesthetics, Constraint-as-X-Ray, etc.) cuts the problem, name it explicitly. Do NOT invent new frameworks for a one-off reactive post.
-
-8. HAITI LENS when it sharpens the post. When the source intersects Haitian context, the Haiti framing is the differentiator. When it doesn't, forcing Haiti in weakens the post.
-
-9. PROSE DISCIPLINE applies (see system prompt). Full sentences. No bullet lists unless the format genuinely demands them.`;
+Treat the counter-argument (whether supplied above or inferred) as the post's central structural move. The sharpest reactive posts name the obvious rebuttal and use it to reframe the argument, not to defend against it.`;
       effectiveExtra = extra || '';
     }
 

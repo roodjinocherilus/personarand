@@ -110,37 +110,25 @@ router.post('/reactive-angles', async (req, res, next) => {
       return res.status(400).json({ error: 'source (URL / headline / observation, 10+ chars) required' });
     }
 
-    const topic = `Generate ${count} REACTIVE post angles in response to what's happening right now.
+    const topic = `Generate up to ${count} REACTIVE post angles in response to what's happening right now.
 
 SOURCE (the thing you're reacting to):
 ---
 ${source.trim()}
 ---
 ${facts && facts.trim() ? `
-SUPPORTING DATA / FACTS the writer has on hand (integrate these into angles that need them — do not invent additional numbers):
+SUPPORTING DATA / FACTS the writer has on hand (anchor angles in these specifics; do not invent numbers beyond what is listed):
 ---
 ${facts.trim()}
 ---
 ` : ''}
-This is TIMELY commentary — the post will go out within 24-72 hours of the source event. Reactive posts get the most engagement AND the most scrutiny; they are where personal brands either break out or get publicly corrected. Treat every angle like it will be cross-examined by someone who wants to prove you wrong.
+Reactive timing: the post publishes within 24-72 hours of the source event. That window is what makes it valuable and what makes every claim subject to cross-examination. The evidentiary rigor in the voice document applies with extra weight: each angle must carry a defensible grounds, no invented statistics, counter-argument anticipated inline.
 
-Rules for every angle:
+Reactive-specific guidance beyond the universal rigor:
 
-1. TAKE A POSITION. No neutral recap. No "interesting development" hot takes. The reader should close the post knowing what the writer thinks and why.
+Platform fit — reactive content lives on X and LinkedIn; carousels and long-form videos are poor fits for 24-72h windows unless the source is a genuinely structural moment worth a deeper treatment.
 
-2. EVIDENCE-BASED. Every position must be defensible. Specify WHAT would ground it: a specific number, a named example, a verifiable claim, a mechanism the writer can explain. If the source provides data, use it. If the user supplied facts above, anchor the angle in those facts. Do NOT generate angles where the core claim would require fabricated statistics to defend. If an angle is more opinion-than-fact, mark it as analytical and flag what observation supports it.
-
-3. ANTICIPATE THE COUNTER. Every reactive take has an obvious rebuttal. The strongest angles name the rebuttal inline and address it, not as a defense but as a sharper framing. Weak angles leave the counter-argument waiting in the comments.
-
-4. NO HEDGE LANGUAGE. "Arguably," "it could be said," "many believe" — all dead. Write like someone who has already concluded. If the writer isn't confident enough to stop hedging, skip the angle.
-
-5. FRAMEWORK OVER NOVELTY. Filter through the brand voice + doctrine. If the source touches infrastructure / distribution / architecture / AI / Haiti / operator-class realities, bring the relevant existing framework to bear (Architect Tax, Distribution Debt, Legibility Gap, Operational Aesthetics, Constraint-as-X-Ray, etc.). Do NOT invent new frameworks for a one-off reactive post.
-
-6. HAITI LENS, only when warranted. When the source genuinely intersects Haitian context, the Haiti framing is a differentiator. When it doesn't, forcing Haiti into the angle weakens the post.
-
-7. PLATFORM FIT. Reactive content lives on X and LinkedIn. Carousels and long-form videos are poor fits for 24-72h windows unless the source is a genuinely structural moment.
-
-8. REJECT WEAK SOURCES. If the source does not support ${count} angles that meet the above bars, return FEWER than ${count}. Padding with forced hot takes is how the personal brand gets publicly embarrassed. Return 1 strong angle over 4 mediocre ones.
+Refuse to pad. If the source does not support ${count} angles that can be defended, return fewer. Returning 1 strong angle over 4 mediocre ones is always the right move for reactive content. Mediocre reactive takes are where personal brands get publicly corrected.
 
 PLATFORMS ALLOWED:
 ${platforms.join(', ')}
