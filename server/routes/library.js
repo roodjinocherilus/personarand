@@ -460,6 +460,112 @@ Your task: revise the content to address the feedback. Keep what works. Only cha
 });
 
 /**
+ * POST /api/content/rigor-check
+ *
+ * Runs a dedicated CRITIC pass against a body of content and returns any
+ * violations of the voice document's rigor rules (Evidentiary Rigor section
+ * + Prose Discipline). Uses Haiku — this is evaluation, not creation, so
+ * the cheaper + faster model fits. The critic has the same cached system
+ * prompt as every generation, so it knows the same doctrine the writer does.
+ *
+ * Body: { body (required), content_type?, platform?, language?: 'en'|'fr' }
+ * Returns: {
+ *   status: 'pass' | 'warn' | 'fail',
+ *   violations: [{
+ *     rule: string,       // one of: invented-stats / vague-quantifier / hedge / no-position / missing-counter / framework / prose
+ *     quote: string,      // the offending passage from the draft
+ *     fix: string,        // one-sentence actionable suggestion
+ *     severity: 'low' | 'medium' | 'high',
+ *   }],
+ *   summary: string,      // one-sentence overall read
+ * }
+ *
+ * No DB write. Pure evaluation. Stateless.
+ */
+router.post('/rigor-check', async (req, res, next) => {
+  try {
+    const { body, content_type, platform, language = 'en' } = req.body || {};
+    if (!body || body.trim().length < 50) {
+      return res.status(400).json({ error: 'body (50+ chars) required' });
+    }
+
+    const topic = `You are the RIGOR CRITIC for this brand voice. You are reviewing a draft against the voice document's Evidentiary Rigor and Prose Discipline rules (already in your system prompt). Your job is to FLAG violations, not rewrite.
+
+DRAFT TO REVIEW (${content_type || 'post'} for ${platform || 'LinkedIn'}, ${language === 'fr' ? 'French' : 'English'}):
+---
+${body.trim()}
+---
+
+Return a JSON object with this exact shape:
+
+{
+  "status": "pass" | "warn" | "fail",
+  "summary": "one sentence on the overall read",
+  "violations": [
+    {
+      "rule": "invented-stats" | "vague-quantifier" | "hedge" | "no-position" | "missing-counter" | "framework" | "prose",
+      "quote": "the offending passage, quoted verbatim from the draft",
+      "fix": "one-sentence concrete fix the writer can apply",
+      "severity": "low" | "medium" | "high"
+    }
+  ]
+}
+
+Rule definitions:
+
+- "invented-stats": a specific percentage, dollar amount, or metric that reads as data but cannot be defended. Flag any specific number that doesn't name its source or context.
+- "vague-quantifier": "many," "some," "most," "experts say," "studies show," "a lot of" without specifics. The writer should either name the specific or use honest first-person scope.
+- "hedge": "arguably," "it could be said," "many believe," "I think maybe," "perhaps," "some would say." Confident first-person ("I think," "my read is") is NOT hedge — do not flag these.
+- "no-position": the draft recaps or summarizes without stating a position. The reader closes the piece without knowing what the writer thinks.
+- "missing-counter": the draft makes a claim that has an obvious rebuttal, and the draft never addresses it. Only flag if the counter is genuinely obvious and the piece could be sharpened by naming it.
+- "framework": the draft's argument is structurally adjacent to a Signature Doctrine framework (Architect Tax, Distribution Debt, Communication Infrastructure, Constraint as X-Ray, Legibility Gap, Operational Aesthetics, R&D Through Exposure, Presence Compounds) but doesn't name it. Not every piece needs a framework — only flag when one genuinely fits and its absence reads as generic.
+- "prose": contains a bullet list or numbered list where Prose Discipline would require full sentences. Does NOT flag justified lists (step-by-step instructions, structured JSON output, parallel enumerations).
+
+Status mapping:
+- "pass": no violations, or only 'low' severity items the writer might choose to leave alone
+- "warn": one or more 'medium' violations — the draft is publishable but could be sharpened
+- "fail": any 'high' severity violation — the draft should be refined before publishing
+
+Be discerning. Do not flag false positives. A post with strong first-person scope and named examples is passing even if it has no statistics at all. A post can pass without every possible framework reference. The critic's job is to catch real violations, not to nitpick polished drafts.`;
+
+    const extra = `Return ONLY the JSON object. No preamble, no explanation, no code fences.`;
+
+    const result = await generate({
+      type: 'article',
+      platform: 'multi',
+      topic,
+      tone: 'sharp',
+      length: 'short',
+      extra,
+      model: 'haiku',
+      // Critic does NOT use feedback loop — it evaluates, it doesn't mimic.
+      useFeedbackLoop: false,
+    });
+
+    let parsed;
+    try {
+      const cleaned = result.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return res.json({
+        status: 'warn',
+        summary: 'Critic returned unparseable output — treat as passed but re-check manually.',
+        violations: [],
+        parse_error: true,
+        raw: result.text,
+      });
+    }
+
+    res.json({
+      status: parsed.status || 'pass',
+      summary: parsed.summary || '',
+      violations: Array.isArray(parsed.violations) ? parsed.violations : [],
+      usage: result.usage,
+    });
+  } catch (e) { next(e); }
+});
+
+/**
  * POST /api/content/:id/caption
  *
  * Generate the POST CAPTION for a carousel or video — the text that goes

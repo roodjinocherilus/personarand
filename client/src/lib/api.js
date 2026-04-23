@@ -203,6 +203,7 @@ export const api = {
     repurpose: (id, payload) => request(`/api/content/${id}/repurpose`, { method: 'POST', body: payload }),
     caption: (id, payload) => request(`/api/content/${id}/caption`, { method: 'POST', body: payload }),
     refine: (id, payload) => request(`/api/content/${id}/refine`, { method: 'POST', body: payload }),
+    rigorCheck: (payload) => request('/api/content/rigor-check', { method: 'POST', body: payload }),
     facets: () => request('/api/content/facets'),
     topPerformers: (limit = 5) => request(`/api/content/top-performers?limit=${limit}`),
     export: () => downloadFile('/api/content/export', 'library-export.md'),

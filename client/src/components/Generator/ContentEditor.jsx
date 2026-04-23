@@ -4,6 +4,7 @@ import { RatingButtons } from '../Library/LibraryView.jsx';
 import RepurposePanel from './RepurposePanel.jsx';
 import PostedVersionPanel from './PostedVersionPanel.jsx';
 import CaptionPanel from './CaptionPanel.jsx';
+import RigorCheckPanel from './RigorCheckPanel.jsx';
 
 // Content types that ship a MEDIA payload (video/script, slide deck) and
 // therefore need a separate POST CAPTION for the text that sits above
@@ -214,6 +215,21 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
     }
   }
 
+  // Called when the rigor-check panel's "Apply fix" button is clicked on a
+  // violation. Pipes the critic's suggested fix directly into the Refine flow
+  // without requiring the user to retype it — closes the critic → refine loop.
+  function applyFixFromCritic(fix) {
+    if (!fix || !id) return;
+    setShowRefine(true);
+    setRefineFeedback(fix);
+    setRefineError(null);
+    // Scroll the Refine panel into view so the user sees what's happening.
+    setTimeout(() => {
+      const el = document.getElementById('refine-panel');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  }
+
   // Refine the current-language body with specific user feedback. Replaces
   // the body in-place and syncs the savedSnapshot so dirty-state resets
   // (refinement is an AI action that's already persisted server-side — not
@@ -399,7 +415,7 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
           keeping what works and only fixing what's called out. Iterate multiple
           times until it sits right. */}
       {showRefine && id && (
-        <div className="p-4 border-t border-primary/40 bg-primary/5 space-y-2">
+        <div id="refine-panel" className="p-4 border-t border-primary/40 bg-primary/5 space-y-2">
           <div className="flex items-start justify-between gap-2">
             <div className="text-sm text-primary font-semibold">
               Refine this {lang === 'fr' ? 'French' : 'English'} draft
@@ -435,6 +451,25 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
               {refining ? 'Revising…' : 'Apply feedback & revise'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Rigor check — automatic critic pass. Auto-runs when the body
+          changes substantively (generation, refine, edits). Surfaces any
+          violations of the Evidentiary Rigor / Prose Discipline rules with
+          concrete fixes. Each fix has an "Apply fix via Refine" button
+          that pipes the suggestion straight into the Refine flow, closing
+          the critic → refine loop. Only renders when there's a persisted
+          id (the critic needs body to evaluate; no point on blank rows). */}
+      {id && currentBody && currentBody.length >= 80 && (
+        <div className="p-4 border-t border-border">
+          <RigorCheckPanel
+            body={currentBody}
+            contentType={type || initial.content_type}
+            platform={platform || initial.platform}
+            language={lang}
+            onApplyFix={applyFixFromCritic}
+          />
         </div>
       )}
 
