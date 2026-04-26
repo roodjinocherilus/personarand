@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import ContentEditor from '../Generator/ContentEditor.jsx';
 
@@ -38,6 +38,21 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
   const [writtenRow, setWrittenRow] = useState(null);
 
   const sourceValid = source.trim().length >= 10;
+  const modalRef = useRef(null);
+
+  // When step changes, scroll the modal back to top so the user sees the
+  // new state (loading indicator, angles list, written post) instead of
+  // wondering where their click went because the new step rendered above
+  // their scroll position.
+  useEffect(() => {
+    if (modalRef.current) {
+      modalRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    // Also log transitions so any future 'nothing happened' can be checked
+    // directly in the browser devtools.
+    // eslint-disable-next-line no-console
+    console.log('[ReactToNow] step →', step, '| writing:', writing, '| loading:', loading);
+  }, [step]);
 
   async function handleBrainstorm() {
     if (!sourceValid) {
@@ -99,8 +114,10 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
     // angleOrDirect === null → "skip angles, write one directly" flow.
     // Otherwise it's a specific angle returned by brainstorm.
     const isDirect = !angleOrDirect;
+    // eslint-disable-next-line no-console
+    console.log('[ReactToNow] writeFullPost:', isDirect ? 'skip-angles' : 'angle', '| source length:', source.trim().length, '| valid:', sourceValid);
     if (isDirect && !sourceValid) {
-      setError('Source is too short. Add a headline or observation.');
+      setError(`Source is too short (${source.trim().length} characters). Paste a URL, a headline, or a sentence or two about what you're reacting to.`);
       return;
     }
     // Remember where we came from so failures return there instead of
@@ -136,9 +153,15 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
         reactive_counter_argument: angle.counter_argument || undefined,
         save: true,
       };
+      // eslint-disable-next-line no-console
+      console.log('[ReactToNow] firing generate.content with payload:', { type: payload.type, platform: payload.platform, has_reactive_source: !!payload.reactive_source, has_title: !!payload.title });
       const row = await api.generate.content(payload);
+      // eslint-disable-next-line no-console
+      console.log('[ReactToNow] generate.content returned row id:', row?.id, 'body length:', row?.body?.length);
       setWrittenRow(row);
     } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[ReactToNow] generate.content failed:', err);
       setError(err.message || 'Generation failed');
       setStep(returnStepOnError);
     } finally {
@@ -186,7 +209,7 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 md:p-8 overflow-y-auto bg-black/70">
+    <div ref={modalRef} className="fixed inset-0 z-50 flex items-start justify-center p-4 md:p-8 overflow-y-auto bg-black/70">
       <div className="card w-full max-w-4xl my-4">
         <div className="px-6 py-4 border-b border-border flex items-start justify-between">
           <div>
@@ -268,19 +291,29 @@ export default function ReactToNowModal({ defaultWeek, onClose, onItemsAdded }) 
 
             {error && <div className="text-danger text-sm">{error}</div>}
 
+            {/* Source-length hint visible inline instead of only showing up via disabled buttons.
+                "Nothing happens when I click" is almost always a silent-disabled
+                button — so we surface the reason proactively. */}
+            {!sourceValid && source.length > 0 && (
+              <div className="text-xs text-warning">
+                Your source is {source.trim().length} character{source.trim().length === 1 ? '' : 's'}. Add a bit more context (at least ~10 characters) so the AI has something to work with.
+              </div>
+            )}
+
             <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-border">
               <button
                 className="btn"
+                // Always clickable — writeFullPost handles validation and sets an explicit error.
                 onClick={() => writeFullPost(null)}
-                disabled={loading || writing || !sourceValid}
+                disabled={loading || writing}
                 title="Skip angle-ideation and write a full post directly from the source"
               >
-                Skip angles — write one now
+                {writing ? 'Writing…' : 'Skip angles — write one now'}
               </button>
               <button
                 className="btn-primary"
                 onClick={handleBrainstorm}
-                disabled={loading || !sourceValid}
+                disabled={loading || writing}
               >
                 {loading ? 'Generating angles…' : `Generate ${count} angles`}
               </button>
