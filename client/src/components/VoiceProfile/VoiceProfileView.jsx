@@ -47,6 +47,7 @@ export default function VoiceProfileView() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [activeImportTab, setActiveImportTab] = useState(null); // 'ai' | 'corpus' | null
+  const [compliancePacks, setCompliancePacks] = useState([]);
 
   // Import-tab state
   const [aiPrompt, setAiPrompt] = useState('');
@@ -61,7 +62,8 @@ export default function VoiceProfileView() {
       api.voiceProfile.dimensions().catch(() => ({ dimensions: [] })),
       api.voiceProfile.get().catch(() => null),
       api.voiceProfile.extractionPrompt().catch(() => ({ prompt: '' })),
-    ]).then(([dims, prof, ext]) => {
+      api.voiceProfile.compliancePacks().catch(() => ({ packs: [] })),
+    ]).then(([dims, prof, ext, packs]) => {
       if (!mounted) return;
       setDimensions(dims.dimensions || []);
       if (prof) {
@@ -70,6 +72,7 @@ export default function VoiceProfileView() {
         setCachedScore(prof.cached_score);
       }
       setAiPrompt(ext.prompt || '');
+      setCompliancePacks(packs.packs || []);
       setLoading(false);
     });
     return () => { mounted = false; };
@@ -376,6 +379,17 @@ export default function VoiceProfileView() {
         </div>
       </div>
 
+      {/* Compliance pack — opt-in rule sets that extend the rigor critic.
+          Most users pick "generic" (no extra rules); regulated executives
+          pick the matching pack. The pack is layered ON TOP of the
+          universal rigor rules + the user's own voice laws — never
+          replaces them. */}
+      <CompliancePackPicker
+        packs={compliancePacks}
+        current={profile.compliance_pack}
+        onChange={(packId) => patchProfile({ compliance_pack: packId === 'generic' ? null : packId })}
+      />
+
       {/* Dimension forms */}
       <div className="space-y-4">
         {dimensions.map((dim) => (
@@ -540,6 +554,49 @@ function DimensionEditor({ dim, value, score, onChange }) {
           AI critic: {score.note}
         </div>
       )}
+    </div>
+  );
+}
+
+function CompliancePackPicker({ packs, current, onChange }) {
+  if (!packs || packs.length === 0) return null;
+  const currentId = current || 'generic';
+  return (
+    <div className="card-pad space-y-3">
+      <div>
+        <div className="text-xs uppercase tracking-wider text-text-secondary">Compliance pack</div>
+        <div className="text-[11px] text-text-secondary mt-1 max-w-2xl leading-relaxed">
+          Pre-defined rule sets the rigor critic will enforce in addition to your voice laws and the universal rigor rules. Pick the pack that matches your professional context. Most users leave this on "Generic operator" — only enable a pack if you operate under specific compliance constraints.
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {packs.map((pack) => {
+          const active = pack.id === currentId;
+          return (
+            <button
+              key={pack.id}
+              type="button"
+              onClick={() => onChange(pack.id)}
+              className={`text-left rounded-md border p-3 transition-colors ${
+                active
+                  ? 'border-primary/60 bg-primary/10'
+                  : 'border-border bg-[#161616] hover:border-text-secondary'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">{pack.label}</div>
+                {active && <span className="text-[10px] uppercase tracking-wider text-primary">Active</span>}
+              </div>
+              <div className="text-[11px] text-text-secondary mt-1 leading-relaxed">{pack.description}</div>
+              {pack.rule_count > 0 && (
+                <div className="text-[10px] text-text-secondary mt-2 font-mono">
+                  {pack.rule_count} rule{pack.rule_count === 1 ? '' : 's'}: {pack.rule_codes.join(', ')}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

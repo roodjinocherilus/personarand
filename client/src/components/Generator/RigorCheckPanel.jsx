@@ -30,6 +30,17 @@ const RULE_META = {
   // are always specific to the user's own brand voice document.
   'voice-law':         { label: 'Voice law',            icon: '⚙️' },
   'anti-voice':        { label: 'Anti-voice tone',      icon: '🚫' },
+  // Compliance-pack rules — added when the user has selected a pack on
+  // their voice profile. Wording matches server/lib/compliancePacks.js
+  // pack rule codes; labels stay short for the panel.
+  'mnpi':                          { label: 'Possible MNPI',                icon: '⚠️' },
+  'forward-guidance':              { label: 'Forward guidance',             icon: '⚠️' },
+  'selective-disclosure':          { label: 'Selective disclosure',         icon: '⚠️' },
+  'unsolicited-advice':            { label: 'Unsolicited specific advice',  icon: '⚕️' },
+  'guarantee-language':            { label: 'Guarantee / outcome promise',  icon: '⚕️' },
+  'professional-relationship-implied': { label: 'Implied pro relationship', icon: '⚕️' },
+  'capacity-ambiguity':            { label: 'Official-vs-personal',         icon: '🏛️' },
+  'donor-conflict':                { label: 'Donor conflict signal',        icon: '🏛️' },
 };
 
 const SEVERITY_STYLE = {

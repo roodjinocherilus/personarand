@@ -2,6 +2,7 @@ const express = require('express');
 const { openDb } = require('../db');
 const { generate, invalidateTopPerformersCache, invalidateRecentEditsCache } = require('../lib/anthropic');
 const { buildCriticRules } = require('../lib/voiceProfile');
+const { getPack, formatPackForCritic } = require('../lib/compliancePacks');
 
 const router = express.Router();
 
@@ -160,11 +161,13 @@ router.post('/rigor-check', async (req, res, next) => {
     // When the profile is too thin, voiceRules is null and the critic
     // stays on the hardcoded rule list — same behavior as before.
     let voiceRules = null;
+    let complianceRules = null;
+    let complianceCodes = [];
     let frameworkExamples = 'a Signature Doctrine framework (Architect Tax, Distribution Debt, Communication Infrastructure, Constraint as X-Ray, Legibility Gap, Operational Aesthetics, R&D Through Exposure, Presence Compounds)';
     try {
       const dbForProfile = openDb();
       const rows = await dbForProfile.prepare(`
-        SELECT voice_laws, anti_voice, frameworks
+        SELECT voice_laws, anti_voice, frameworks, compliance_pack
         FROM voice_profiles
         WHERE is_primary = TRUE
         LIMIT 1
@@ -185,6 +188,12 @@ router.post('/rigor-check', async (req, res, next) => {
         if (namedFrameworks.length > 0) {
           frameworkExamples = `one of the writer's named frameworks (${namedFrameworks.join(', ')})`;
         }
+
+        const pack = getPack(profile.compliance_pack);
+        if (pack) {
+          complianceRules = formatPackForCritic(pack);
+          complianceCodes = pack.rules.map((r) => r.code);
+        }
       }
     } catch (err) {
       // Migration probably hasn't run yet — silently fall back. The critic
@@ -192,7 +201,10 @@ router.post('/rigor-check', async (req, res, next) => {
       console.warn('[rigor-check] voice profile load failed:', err.message);
     }
 
-    const ruleEnumExtension = voiceRules ? ' | "voice-law" | "anti-voice"' : '';
+    const ruleEnumParts = [];
+    if (voiceRules) ruleEnumParts.push('"voice-law"', '"anti-voice"');
+    for (const code of complianceCodes) ruleEnumParts.push(`"${code}"`);
+    const ruleEnumExtension = ruleEnumParts.length ? ' | ' + ruleEnumParts.join(' | ') : '';
 
     const topic = `You are the RIGOR CRITIC for this brand voice. You are reviewing a draft against the voice document's Evidentiary Rigor and Prose Discipline rules (already in your system prompt). Your job is to FLAG violations, not rewrite.
 
@@ -227,6 +239,7 @@ Rule definitions:
 - "prose": contains a bullet list or numbered list where Prose Discipline would require full sentences. Does NOT flag justified lists (step-by-step instructions, structured JSON output, parallel enumerations).
 
 ${voiceRules || ''}
+${complianceRules || ''}
 Status mapping:
 - "pass": no violations, or only 'low' severity items the writer might choose to leave alone
 - "warn": one or more 'medium' violations — the draft is publishable but could be sharpened

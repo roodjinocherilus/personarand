@@ -32,6 +32,7 @@ const {
   humanizeAnthropicError,
   invalidateVoiceProfileCache,
 } = require('../lib/anthropic');
+const { listPacks, getPack } = require('../lib/compliancePacks');
 
 const router = express.Router();
 
@@ -50,6 +51,7 @@ async function readProfile() {
     SELECT id, is_primary, display_name, core_thesis, stand_for, stand_against,
            domains_of_authority, frameworks, voice_laws, primary_audiences,
            anti_voice, strategic_horizon, regional_context, source_mode,
+           compliance_pack,
            score_total, score_breakdown, score_at, created_at, updated_at
     FROM voice_profiles
     WHERE is_primary = TRUE
@@ -93,6 +95,15 @@ function sanitizeProfilePayload(input) {
   if (typeof input.source_mode === 'string') {
     const allowed = ['questionnaire', 'ai-extraction', 'corpus', 'mixed', 'default'];
     if (allowed.includes(input.source_mode)) safe.source_mode = input.source_mode;
+  }
+  // Compliance pack — validated against the registered pack list. Pass
+  // null / 'generic' to clear; any unknown id is silently dropped to
+  // prevent a typo from persisting an unenforceable pack.
+  if (input.compliance_pack === null || input.compliance_pack === 'generic') {
+    safe.compliance_pack = null;
+  } else if (typeof input.compliance_pack === 'string' && input.compliance_pack.trim()) {
+    const known = listPacks().some((p) => p.id === input.compliance_pack);
+    if (known) safe.compliance_pack = input.compliance_pack;
   }
   // List fields — array of non-empty strings only.
   for (const key of ['stand_for', 'stand_against', 'voice_laws', 'anti_voice']) {
@@ -173,6 +184,14 @@ router.get('/dimensions', (req, res) => {
 
 router.get('/extraction-prompt', (req, res) => {
   res.json({ prompt: AI_EXTRACTION_PROMPT });
+});
+
+// -----------------------------------------------------------------------------
+// GET /api/voice-profile/compliance-packs  — registered packs for the picker
+// -----------------------------------------------------------------------------
+
+router.get('/compliance-packs', (req, res) => {
+  res.json({ packs: listPacks() });
 });
 
 // -----------------------------------------------------------------------------
@@ -267,10 +286,11 @@ router.put('/', async (req, res, next) => {
         INSERT INTO voice_profiles (
           is_primary, display_name, core_thesis, stand_for, stand_against,
           domains_of_authority, frameworks, voice_laws, primary_audiences,
-          anti_voice, strategic_horizon, regional_context, source_mode
+          anti_voice, strategic_horizon, regional_context, source_mode,
+          compliance_pack
         ) VALUES (
           TRUE, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb,
-          ?::jsonb, ?::jsonb, ?, ?, ?
+          ?::jsonb, ?::jsonb, ?, ?, ?, ?
         )
       `).run([
         safe.display_name || null,
@@ -285,6 +305,7 @@ router.put('/', async (req, res, next) => {
         safe.strategic_horizon || null,
         safe.regional_context || null,
         safe.source_mode || 'questionnaire',
+        safe.compliance_pack ?? null,
       ]);
     } else {
       // Update only the fields present in the payload — caller may be saving
@@ -302,6 +323,8 @@ router.put('/', async (req, res, next) => {
         strategic_horizon: safe.strategic_horizon ?? existing.strategic_horizon,
         regional_context: safe.regional_context ?? existing.regional_context,
         source_mode: safe.source_mode ?? existing.source_mode,
+        // compliance_pack: explicit null clears; undefined preserves
+        compliance_pack: 'compliance_pack' in safe ? safe.compliance_pack : existing.compliance_pack,
       };
       await db.prepare(`
         UPDATE voice_profiles SET
@@ -317,6 +340,7 @@ router.put('/', async (req, res, next) => {
           strategic_horizon = ?,
           regional_context = ?,
           source_mode = ?,
+          compliance_pack = ?,
           updated_at = NOW()
         WHERE is_primary = TRUE
       `).run([
@@ -332,6 +356,7 @@ router.put('/', async (req, res, next) => {
         merged.strategic_horizon,
         merged.regional_context,
         merged.source_mode || 'mixed',
+        merged.compliance_pack ?? null,
       ]);
     }
 
@@ -434,6 +459,7 @@ router.post('/reset', async (req, res, next) => {
         strategic_horizon = NULL,
         regional_context = NULL,
         source_mode = 'default',
+        compliance_pack = NULL,
         score_total = NULL,
         score_breakdown = NULL,
         score_at = NULL,

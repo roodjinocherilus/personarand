@@ -264,6 +264,7 @@ export const api = {
     }),
     score: () => request('/api/voice-profile/score', { method: 'POST', body: {} }),
     reset: () => request('/api/voice-profile/reset', { method: 'POST', body: {} }),
+    compliancePacks: () => request('/api/voice-profile/compliance-packs'),
   },
   health: () => request('/api/health'),
   uploads: {
