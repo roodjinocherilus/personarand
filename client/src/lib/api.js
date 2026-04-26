@@ -206,6 +206,7 @@ export const api = {
     rigorCheck: (payload) => request('/api/content/rigor-check', { method: 'POST', body: payload }),
     metrics: (id, payload) => request(`/api/content/${id}/metrics`, { method: 'POST', body: payload }),
     insights: () => request('/api/content/insights', { method: 'POST', body: {} }),
+    suggestHashtags: (payload) => request('/api/content/hashtag-suggest', { method: 'POST', body: payload }),
     facets: () => request('/api/content/facets'),
     topPerformers: (limit = 5) => request(`/api/content/top-performers?limit=${limit}`),
     export: () => downloadFile('/api/content/export', 'library-export.md'),

@@ -54,6 +54,12 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
   const [refining, setRefining] = useState(false);
   const [refineError, setRefineError] = useState(null);
   const [refinementCount, setRefinementCount] = useState(0);
+  // Hashtag suggester — independent of refine flow. Caches the last
+  // suggestions so the panel stays open while the user picks tags to
+  // append.
+  const [hashtags, setHashtags] = useState(null);   // null | array
+  const [hashtagsBusy, setHashtagsBusy] = useState(false);
+  const [hashtagsError, setHashtagsError] = useState(null);
 
   // Last-persisted snapshot — used to detect dirty state for auto-save.
   const savedSnapshot = useRef({
@@ -108,6 +114,45 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
 
   // Current-language helpers — the textarea always edits whichever language is active.
   const currentBody = lang === 'fr' ? bodyFr : body;
+
+  async function handleSuggestHashtags() {
+    setHashtagsError(null);
+    setHashtagsBusy(true);
+    try {
+      const r = await api.library.suggestHashtags({ text: currentBody, platform });
+      setHashtags(r.hashtags || []);
+    } catch (e) {
+      setHashtagsError(e.message || 'Hashtag suggestion failed');
+    } finally {
+      setHashtagsBusy(false);
+    }
+  }
+
+  function appendHashtag(tag) {
+    // Append at end of body with leading space if needed. Preserves the
+    // user's editing position when the tag is added.
+    const setter = lang === 'fr' ? setBodyFr : setBody;
+    setter((prev) => {
+      const trimmed = (prev || '').replace(/\s+$/, '');
+      const sep = trimmed.endsWith(tag) ? '' : trimmed.length > 0 ? ' ' : '';
+      // Avoid double-add if tag already present.
+      if (trimmed.toLowerCase().includes(tag.toLowerCase())) return prev;
+      return `${trimmed}${sep}${tag}`;
+    });
+  }
+
+  function appendAllHashtags() {
+    if (!hashtags || hashtags.length === 0) return;
+    const setter = lang === 'fr' ? setBodyFr : setBody;
+    setter((prev) => {
+      const trimmed = (prev || '').replace(/\s+$/, '');
+      // Only add tags not already present (case-insensitive).
+      const lower = trimmed.toLowerCase();
+      const toAdd = hashtags.filter((t) => !lower.includes(t.toLowerCase()));
+      if (toAdd.length === 0) return prev;
+      return `${trimmed}${trimmed.length > 0 ? '\n\n' : ''}${toAdd.join(' ')}`;
+    });
+  }
   const currentTitle = lang === 'fr' ? titleFr : title;
   const setCurrentBody = lang === 'fr' ? setBodyFr : setBody;
   const setCurrentTitle = lang === 'fr' ? setTitleFr : setTitle;
@@ -389,6 +434,14 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
           {!autoSaveMsg && !savedAt && id && dirty && <span>· Unsaved edits (auto-saves every 30s)</span>}
         </div>
         <div className="flex gap-2">
+          <button
+            className="btn"
+            onClick={handleSuggestHashtags}
+            disabled={hashtagsBusy || currentBody.trim().length < 30}
+            title="Run a Haiku call that proposes platform-appropriate hashtags. Click any tag to append it; or click Append all."
+          >
+            {hashtagsBusy ? 'Suggesting…' : '# Hashtags'}
+          </button>
           {id && (
             <button
               className={`btn ${showRefine ? 'border-primary text-primary' : ''}`}
@@ -409,6 +462,41 @@ export default function ContentEditor({ initial, platform, type, onRegenerate, r
           </button>
         </div>
       </div>
+
+      {/* Hashtag suggestions panel — expands below the footer after the
+          Hashtags button is clicked. Click any chip to append; or
+          Append-all to drop the whole set at the end of the body. */}
+      {hashtags && (
+        <div className="p-4 border-t border-border space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-text-secondary">
+              Suggested for <span className="text-text-primary">{platform || 'multi'}</span> · click to append
+            </div>
+            <div className="flex gap-2">
+              <button className="btn-ghost text-xs" onClick={appendAllHashtags} disabled={hashtags.length === 0}>
+                Append all
+              </button>
+              <button className="btn-ghost text-xs" onClick={() => setHashtags(null)}>Dismiss</button>
+            </div>
+          </div>
+          {hashtags.length === 0 && (
+            <div className="text-xs text-text-secondary italic">No suggestions returned. Try regenerating after editing the body.</div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {hashtags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => appendHashtag(tag)}
+                className="pill border-primary/40 bg-primary/5 text-primary hover:bg-primary/10"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          {hashtagsError && <div className="text-[11px] text-warning">{hashtagsError}</div>}
+        </div>
+      )}
 
       {/* Refine-with-feedback panel — expands below the footer when toggled.
           The AI sees the current draft + user feedback and revises in place,

@@ -310,6 +310,100 @@ router.get('/:id', async (req, res, next) => {
  * does — Express matches in registration order.
  */
 /**
+ * POST /api/content/hashtag-suggest
+ *
+ * Stateless. Reads the body text + platform, returns 3-7 hashtags
+ * appropriate for that platform. No save — caller appends them to
+ * the body if they want.
+ *
+ * Why server-side and not just generated alongside the post: the user
+ * often wants hashtags AFTER they've edited the draft into final form.
+ * Asking the AI for hashtags up-front means re-running the whole
+ * generation when they change. A dedicated endpoint runs Haiku in <2s
+ * and lets the user re-roll cheaply.
+ */
+router.post('/hashtag-suggest', async (req, res, next) => {
+  try {
+    const { text, platform } = req.body || {};
+    if (!text || String(text).trim().length < 30) {
+      return res.status(400).json({ error: 'text (30+ chars) required' });
+    }
+
+    const platformLabel = (platform || 'LinkedIn').toString();
+    const platformHint = {
+      LinkedIn: 'LinkedIn — 3 to 5 specific hashtags. Niche over generic. No #motivation / #leadership clichés.',
+      X:        'X — 1 to 2 hashtags max. Twitter culture punishes hashtag-heavy posts.',
+      Instagram:'Instagram — 5 to 7 hashtags. Mix of broad-reach + niche. Place at the end.',
+      'Instagram Reels': 'Instagram Reels — 5 to 7 hashtags. Mix of broad-reach + niche.',
+      TikTok:   'TikTok — 3 to 5 hashtags. Include 1 trending where genuinely relevant; otherwise stay specific.',
+      YouTube:  'YouTube — 3 to 5 hashtags for the description. Also include 2-3 broader category terms.',
+    }[platformLabel] || 'Pick 3 to 5 hashtags appropriate to the post topic.';
+
+    const topic = `Suggest hashtags for the post below.
+
+PLATFORM: ${platformLabel}
+PLATFORM RULES: ${platformHint}
+
+POST:
+---
+${String(text).slice(0, 4000)}
+---
+
+Return STRICT JSON of this exact shape:
+
+{
+  "hashtags": ["#tag1", "#tag2", ...]
+}
+
+Rules:
+- Each hashtag starts with #, no spaces inside.
+- Specific over generic. "#OperatorClass" beats "#Leadership".
+- No emojis inside the tag.
+- No more than the platform allows.
+- Tags should reflect the post's actual subject, not its tone.
+
+Output JSON only.`;
+
+    const result = await generate({
+      type: 'article',
+      platform: 'multi',
+      topic,
+      tone: 'sharp',
+      length: 'short',
+      extra: 'Return ONLY the JSON object. No preamble, no explanation, no code fences.',
+      model: 'haiku',
+      useFeedbackLoop: false,
+    });
+
+    let parsed;
+    try {
+      const cleaned = result.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return res.status(502).json({ error: 'Suggester returned non-JSON', raw: result.text });
+    }
+
+    // Defensive normalization — strip whitespace, drop anything that doesn't
+    // start with #, dedupe.
+    const tags = Array.isArray(parsed.hashtags) ? parsed.hashtags : [];
+    const seen = new Set();
+    const cleaned = [];
+    for (const raw of tags) {
+      const s = String(raw || '').trim();
+      if (!s.startsWith('#')) continue;
+      const safe = s.replace(/[^A-Za-z0-9_#]/g, '');
+      if (safe.length < 2) continue;
+      const key = safe.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cleaned.push(safe);
+    }
+
+    res.json({ hashtags: cleaned, platform: platformLabel });
+  } catch (e) { next(e); }
+});
+
+/**
  * POST /api/content/insights
  *
  * AI-driven performance pattern analysis. Reads up to 25 recent posts
