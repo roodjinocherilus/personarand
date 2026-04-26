@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 
 /**
@@ -50,6 +50,8 @@ export default function VoiceProfileView() {
   const [compliancePacks, setCompliancePacks] = useState([]);
   const [archetypes, setArchetypes] = useState([]);
   const [archetypeBusy, setArchetypeBusy] = useState(null); // id being applied
+  const [importBusy, setImportBusy] = useState(false);
+  const importInputRef = useRef(null);
 
   // Import-tab state
   const [aiPrompt, setAiPrompt] = useState('');
@@ -152,6 +154,37 @@ export default function VoiceProfileView() {
       setError(e.message || 'Parse failed');
     } finally {
       setAiBusy(false);
+    }
+  }
+
+  function handleExport() {
+    api.voiceProfile.export().catch((e) => setError(e.message || 'Export failed'));
+  }
+
+  async function handleImportFile(file) {
+    if (!file) return;
+    setError(null);
+    setNotice(null);
+    setImportBusy(true);
+    try {
+      const text = await file.text();
+      let payload;
+      try { payload = JSON.parse(text); }
+      catch { throw new Error('Selected file is not valid JSON.'); }
+      if (payload.kind !== 'voice-profile') {
+        throw new Error(`Wrong file kind: expected "voice-profile", got "${payload.kind || 'unknown'}".`);
+      }
+      const r = await api.voiceProfile.import(payload);
+      setProfile(r.profile);
+      setLocalScore(r.local_score);
+      setCachedScore(r.cached_score);
+      setNotice('Profile imported. The next generation will use this voice.');
+    } catch (e) {
+      setError(e.message || 'Import failed');
+    } finally {
+      setImportBusy(false);
+      // Reset the input so selecting the same file twice still fires onChange.
+      if (importInputRef.current) importInputRef.current.value = '';
     }
   }
 
@@ -456,6 +489,40 @@ export default function VoiceProfileView() {
             onChange={(v) => patchProfile({ [dim.key]: v })}
           />
         ))}
+      </div>
+
+      {/* Backup — export current profile as JSON, import from a previous
+          export. Import REPLACES the profile (it's restoration, not
+          merging). Useful for: backup peace of mind, sharing voice
+          documents between teammates, restoring after an experiment. */}
+      <div className="card-pad space-y-3">
+        <div>
+          <div className="text-xs uppercase tracking-wider text-text-secondary">Backup</div>
+          <div className="text-sm font-semibold mt-1">Export / import profile</div>
+          <div className="text-[11px] text-text-secondary mt-1 max-w-2xl leading-relaxed">
+            Your voice document is your data — download it any time, restore it on a fresh install, hand it to a teammate. Import REPLACES the current profile completely; if you want merging, use the AI / corpus / archetype paths instead.
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-ghost text-xs" onClick={handleExport}>
+            ⬇ Export profile (JSON)
+          </button>
+          <button
+            type="button"
+            className="btn-ghost text-xs"
+            disabled={importBusy}
+            onClick={() => importInputRef.current?.click()}
+          >
+            {importBusy ? 'Importing…' : '⬆ Import profile (JSON)'}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => handleImportFile(e.target.files?.[0])}
+          />
+        </div>
       </div>
 
       {/* Sticky save bar */}

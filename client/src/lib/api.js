@@ -271,6 +271,8 @@ export const api = {
     compliancePacks: () => request('/api/voice-profile/compliance-packs'),
     archetypes: () => request('/api/voice-profile/archetypes'),
     archetype: (id) => request(`/api/voice-profile/archetypes/${id}`),
+    export: () => downloadFile('/api/voice-profile/export', 'voice-profile.json'),
+    import: (payload) => request('/api/voice-profile/import', { method: 'POST', body: { payload } }),
   },
   health: () => request('/api/health'),
   uploads: {

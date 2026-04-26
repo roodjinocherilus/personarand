@@ -211,6 +211,149 @@ router.get('/archetypes/:id', (req, res) => {
 });
 
 // -----------------------------------------------------------------------------
+// GET /api/voice-profile/export
+//
+// Download the current profile as a clean JSON file. We deliberately
+// exclude server-side metadata (id, created_at, score caches) — these
+// either don't survive an import (id), aren't useful (created_at), or
+// would be misleading after import (cached score from a different
+// profile state). The export is what the user OWNS — pure profile content.
+// -----------------------------------------------------------------------------
+
+router.get('/export', async (req, res, next) => {
+  try {
+    const profile = await readProfile();
+    const date = new Date().toISOString().slice(0, 10);
+    const exportPayload = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      kind: 'voice-profile',
+      profile: profile ? {
+        display_name: profile.display_name || null,
+        core_thesis: profile.core_thesis || null,
+        stand_for: profile.stand_for || [],
+        stand_against: profile.stand_against || [],
+        domains_of_authority: profile.domains_of_authority || [],
+        frameworks: profile.frameworks || [],
+        voice_laws: profile.voice_laws || [],
+        primary_audiences: profile.primary_audiences || [],
+        anti_voice: profile.anti_voice || [],
+        strategic_horizon: profile.strategic_horizon || null,
+        regional_context: profile.regional_context || null,
+        source_mode: profile.source_mode || null,
+        compliance_pack: profile.compliance_pack || null,
+      } : null,
+    };
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="voice-profile-${date}.json"`);
+    res.send(JSON.stringify(exportPayload, null, 2));
+  } catch (e) { next(e); }
+});
+
+// -----------------------------------------------------------------------------
+// POST /api/voice-profile/import
+//
+// Accept a previously-exported JSON payload (or a hand-crafted one in
+// the same shape). Validates the version + kind, then sanitizes via
+// the same path PUT uses. Returns the post-import profile + score so
+// the UI can show the result immediately. Existing fields are
+// REPLACED on import — this is opt-in restoration, not a merge. If the
+// user wants merging behavior, they should use the archetype / corpus
+// / AI-extraction paths instead, which all merge.
+// -----------------------------------------------------------------------------
+
+router.post('/import', async (req, res, next) => {
+  try {
+    const payload = req.body?.payload;
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ error: 'payload required' });
+    }
+    if (payload.kind !== 'voice-profile') {
+      return res.status(400).json({ error: `Wrong file kind: expected "voice-profile", got "${payload.kind}"` });
+    }
+    if (payload.version !== 1) {
+      return res.status(400).json({ error: `Unsupported version: ${payload.version}` });
+    }
+    const incoming = payload.profile || {};
+    const safe = sanitizeProfilePayload(incoming);
+
+    const db = openDb();
+    const existing = await readProfile();
+    if (!existing) {
+      await db.prepare(`
+        INSERT INTO voice_profiles (
+          is_primary, display_name, core_thesis, stand_for, stand_against,
+          domains_of_authority, frameworks, voice_laws, primary_audiences,
+          anti_voice, strategic_horizon, regional_context, source_mode,
+          compliance_pack
+        ) VALUES (
+          TRUE, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb,
+          ?::jsonb, ?::jsonb, ?, ?, ?, ?
+        )
+      `).run([
+        safe.display_name || null,
+        safe.core_thesis || null,
+        JSON.stringify(safe.stand_for || []),
+        JSON.stringify(safe.stand_against || []),
+        JSON.stringify(safe.domains_of_authority || []),
+        JSON.stringify(safe.frameworks || []),
+        JSON.stringify(safe.voice_laws || []),
+        JSON.stringify(safe.primary_audiences || []),
+        JSON.stringify(safe.anti_voice || []),
+        safe.strategic_horizon || null,
+        safe.regional_context || null,
+        safe.source_mode || 'mixed',
+        safe.compliance_pack ?? null,
+      ]);
+    } else {
+      // Replace every column with the import — including clearing fields
+      // not present in the import. That's the contract of "restore".
+      await db.prepare(`
+        UPDATE voice_profiles SET
+          display_name = ?,
+          core_thesis = ?,
+          stand_for = ?::jsonb,
+          stand_against = ?::jsonb,
+          domains_of_authority = ?::jsonb,
+          frameworks = ?::jsonb,
+          voice_laws = ?::jsonb,
+          primary_audiences = ?::jsonb,
+          anti_voice = ?::jsonb,
+          strategic_horizon = ?,
+          regional_context = ?,
+          source_mode = ?,
+          compliance_pack = ?,
+          score_total = NULL,
+          score_breakdown = NULL,
+          score_at = NULL,
+          updated_at = NOW()
+        WHERE is_primary = TRUE
+      `).run([
+        safe.display_name ?? null,
+        safe.core_thesis ?? null,
+        JSON.stringify(safe.stand_for || []),
+        JSON.stringify(safe.stand_against || []),
+        JSON.stringify(safe.domains_of_authority || []),
+        JSON.stringify(safe.frameworks || []),
+        JSON.stringify(safe.voice_laws || []),
+        JSON.stringify(safe.primary_audiences || []),
+        JSON.stringify(safe.anti_voice || []),
+        safe.strategic_horizon ?? null,
+        safe.regional_context ?? null,
+        safe.source_mode ?? 'mixed',
+        safe.compliance_pack ?? null,
+      ]);
+    }
+
+    invalidateVoiceProfileCache();
+
+    const profile = await readProfile();
+    const local = require('../lib/voiceProfile').localScore(profile);
+    res.json({ profile, local_score: local, cached_score: null });
+  } catch (e) { next(e); }
+});
+
+// -----------------------------------------------------------------------------
 // POST /api/voice-profile/parse-ai-response
 //
 // User pastes the JSON their existing AI returned. We parse it and hand back a
