@@ -156,6 +156,76 @@ async function syncCalendarStatusToContent(db, calendarId, calendarStatus) {
   }
 }
 
+/**
+ * POST /api/calendar/clone-week
+ *
+ * Body: { from_week: number, to_week: number, only_planned?: boolean }
+ *
+ * Copy every calendar item in `from_week` into `to_week` as fresh
+ * 'planned' slots. Useful when the user has settled into a cadence and
+ * wants next week to mirror this week's structure without re-typing.
+ *
+ * Cloned rows always start as `planned` regardless of source status —
+ * they're new content commitments, not reproductions of work already
+ * done. Reactive slots (is_reactive=true) are NEVER cloned because
+ * reactivity is anchored to a specific moment.
+ *
+ * `only_planned: true` (default) clones only items currently in 'planned'
+ * status — usually what the user wants. Setting it to false clones every
+ * non-reactive item from the source week regardless of stage.
+ *
+ * Sits ABOVE /:id routes for the same Express route-order reason
+ * rigor-check does.
+ */
+router.post('/clone-week', async (req, res, next) => {
+  try {
+    const db = openDb();
+    const { from_week, to_week, only_planned = true } = req.body || {};
+    const fromW = Number(from_week);
+    const toW = Number(to_week);
+    if (!Number.isInteger(fromW) || fromW < 1) return res.status(400).json({ error: 'from_week (positive integer) required' });
+    if (!Number.isInteger(toW) || toW < 1) return res.status(400).json({ error: 'to_week (positive integer) required' });
+    if (fromW === toW) return res.status(400).json({ error: 'from_week and to_week cannot be the same' });
+
+    const where = only_planned
+      ? `WHERE week = ? AND is_reactive = FALSE AND status = 'planned'`
+      : `WHERE week = ? AND is_reactive = FALSE`;
+    const sourceRows = await db.prepare(`
+      SELECT day, title, description, content_type, platforms, funnel_layer
+      FROM content_calendar
+      ${where}
+      ORDER BY day ASC, id ASC
+    `).all([fromW]);
+
+    if (!sourceRows || sourceRows.length === 0) {
+      return res.json({
+        cloned: 0,
+        message: `No${only_planned ? ' planned' : ''} non-reactive items in week ${fromW} to clone.`,
+        from_week: fromW,
+        to_week: toW,
+      });
+    }
+
+    const created = [];
+    for (const r of sourceRows) {
+      const platformsJson = typeof r.platforms === 'string' ? r.platforms : JSON.stringify(r.platforms || []);
+      const info = await db.prepare(`
+        INSERT INTO content_calendar (week, day, title, description, content_type, platforms, funnel_layer, status, is_reactive)
+        VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, 'planned', FALSE)
+      `).run([toW, r.day, r.title, r.description, r.content_type, platformsJson, r.funnel_layer]);
+      const newRow = await db.prepare(`SELECT * FROM content_calendar WHERE id = ?`).get([info.lastInsertRowid]);
+      created.push(hydrate(newRow));
+    }
+
+    res.json({
+      cloned: created.length,
+      from_week: fromW,
+      to_week: toW,
+      items: created,
+    });
+  } catch (e) { next(e); }
+});
+
 function hydrate(row) {
   if (!row) return row;
   return { ...row, platforms: normalizeArray(row.platforms) };

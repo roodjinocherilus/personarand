@@ -68,6 +68,7 @@ export const api = {
     }),
     create: (payload) => request('/api/calendar', { method: 'POST', body: payload }),
     update: (id, payload) => request(`/api/calendar/${id}`, { method: 'PATCH', body: payload }),
+    cloneWeek: (payload) => request('/api/calendar/clone-week', { method: 'POST', body: payload }),
     remove: (id) => request(`/api/calendar/${id}`, { method: 'DELETE' }),
     clearAll: () => request('/api/calendar-ai/clear', { method: 'POST' }),
     planMonth: (payload) => request('/api/calendar-ai/plan-month', { method: 'POST', body: payload }),

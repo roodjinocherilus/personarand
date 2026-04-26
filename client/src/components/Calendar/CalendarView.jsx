@@ -203,9 +203,37 @@ export default function CalendarView() {
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-5">
           {weeks.map(([week, weekItems]) => (
             <div key={week} className="space-y-3">
-              <div className="flex items-baseline justify-between">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap">
                 <div className="text-sm font-semibold text-text-primary">Week {week}</div>
-                <div className="text-[11px] text-text-secondary">{weekItems.length} items</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-ghost text-[11px]"
+                    title="Copy this week's planned items into next week as fresh planned slots"
+                    onClick={async () => {
+                      const target = window.prompt(`Clone Week ${week}'s PLANNED items into which week number?`, String(week + 1));
+                      if (target == null) return;
+                      const toW = Number(target);
+                      if (!Number.isInteger(toW) || toW < 1 || toW === week) {
+                        alert('Pick a different week number.');
+                        return;
+                      }
+                      try {
+                        const r = await api.calendar.cloneWeek({ from_week: week, to_week: toW });
+                        if (r.cloned === 0) {
+                          alert(r.message || 'Nothing to clone.');
+                        } else {
+                          await load();
+                        }
+                      } catch (e) {
+                        alert(`Clone failed: ${e.message}`);
+                      }
+                    }}
+                  >
+                    📋 Clone
+                  </button>
+                  <div className="text-[11px] text-text-secondary">{weekItems.length} items</div>
+                </div>
               </div>
               {weekItems.map((item) => (
                 <CalendarItem
