@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import ReactToNowModal from './Calendar/ReactToNowModal.jsx';
 import AICalibrationCard from './AICalibrationCard.jsx';
+import VoiceScoreCard from './VoiceProfile/VoiceScoreCard.jsx';
 
 const FUNNEL_LAYERS = [
   { key: 'Discovery', target: 6, tint: 'bg-blue-500/10 border-blue-500/30 text-blue-300' },
@@ -158,6 +159,13 @@ export default function Dashboard() {
           surface: the tool's ceiling is tied to how these fill in. Collapses
           to a quiet "✓ Calibrated" state once all three thresholds are met. */}
       <AICalibrationCard />
+
+      {/* Voice Profile completeness — the structured voice document that
+          drives every generation. Sits adjacent to AI Calibration because
+          they're the two halves of the quality ceiling: calibration is
+          about feedback (what works, what to fix), voice profile is about
+          the prompt itself (what voice is the AI even attempting). */}
+      <VoiceScoreCard />
 
 
       {/* Review-enforcement ribbon — unrated posted content from the last week.

@@ -11,6 +11,7 @@ const NAV = [
   { to: '/attribution', label: 'Attribution', hint: 'Revenue intelligence' },
   { to: '/briefing', label: 'Briefing', hint: 'Weekly angles + news' },
   { to: '/knowledge', label: 'Knowledge', hint: 'AI context base' },
+  { to: '/voice-profile', label: 'Voice profile', hint: 'Brand voice document' },
   { to: '/review', label: 'Review', hint: 'Weekly reflection' },
   { to: '/metrics', label: 'Metrics', hint: 'Weekly performance' },
 ];

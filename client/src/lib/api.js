@@ -250,6 +250,18 @@ export const api = {
     toggle: (ids, is_active) => request('/api/knowledge/toggle', { method: 'POST', body: { ids, is_active } }),
     export: () => downloadFile('/api/knowledge/export', 'knowledge-export.md'),
   },
+  voiceProfile: {
+    get: () => request('/api/voice-profile'),
+    save: (profile) => request('/api/voice-profile', { method: 'PUT', body: profile }),
+    dimensions: () => request('/api/voice-profile/dimensions'),
+    extractionPrompt: () => request('/api/voice-profile/extraction-prompt'),
+    parseAiResponse: (text) => request('/api/voice-profile/parse-ai-response', { method: 'POST', body: { text } }),
+    extractFromCorpus: (corpus, display_name) => request('/api/voice-profile/extract-from-corpus', {
+      method: 'POST', body: { corpus, display_name },
+    }),
+    score: () => request('/api/voice-profile/score', { method: 'POST', body: {} }),
+    reset: () => request('/api/voice-profile/reset', { method: 'POST', body: {} }),
+  },
   health: () => request('/api/health'),
   uploads: {
     list: (params = {}) => {

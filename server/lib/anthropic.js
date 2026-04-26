@@ -6,6 +6,7 @@ const {
   buildUserMessage,
 } = require('./prompts');
 const { query } = require('./db');
+const { compileProfileToSystemPrompt } = require('./voiceProfile');
 
 // Fetch active KB entries + format them for system prompt injection.
 // Cached for 60s since they change infrequently.
@@ -44,6 +45,45 @@ async function getKnowledgeBaseBlock() {
   }
 }
 function invalidateKbCache() { kbCache = { text: '', at: 0, tokenCount: 0 }; }
+
+// Voice profile cache. The compiled system prompt is byte-stable for a
+// given profile state (any cache invalidation comes from a save in
+// /api/voice-profile, which calls invalidateVoiceProfileCache()). Falls
+// back silently to the legacy hardcoded BRAND_SYSTEM_PROMPT when the
+// table is missing (migration not run) or the row is too thin for the
+// compiler to accept.
+let voiceProfileCache = { text: '', at: 0, source: 'default' };
+async function getVoiceProfileBlock() {
+  if (Date.now() - voiceProfileCache.at < 60_000) return voiceProfileCache;
+  try {
+    const rows = await query(`
+      SELECT display_name, core_thesis, stand_for, stand_against,
+             domains_of_authority, frameworks, voice_laws,
+             primary_audiences, anti_voice, strategic_horizon,
+             regional_context, source_mode
+      FROM voice_profiles
+      WHERE is_primary = TRUE
+      LIMIT 1
+    `);
+    if (!rows || rows.length === 0) {
+      voiceProfileCache = { text: '', at: Date.now(), source: 'default' };
+      return voiceProfileCache;
+    }
+    const compiled = compileProfileToSystemPrompt(rows[0]);
+    if (!compiled) {
+      voiceProfileCache = { text: '', at: Date.now(), source: 'default' };
+      return voiceProfileCache;
+    }
+    voiceProfileCache = { text: compiled, at: Date.now(), source: rows[0].source_mode || 'profile' };
+    return voiceProfileCache;
+  } catch (err) {
+    // Migration probably hasn't run yet — fall back to the hardcoded prompt.
+    console.warn('[voice-profile] fetch failed:', err.message);
+    voiceProfileCache = { text: '', at: Date.now(), source: 'default' };
+    return voiceProfileCache;
+  }
+}
+function invalidateVoiceProfileCache() { voiceProfileCache = { text: '', at: 0, source: 'default' }; }
 
 /**
  * Fetch the user's top-rated posts to inject as tonal reference into new
@@ -347,9 +387,19 @@ Return ONLY the French content. No preamble.`;
   // Caches are per-model, so Haiku and Opus warm independently. This is fine:
   // outreach personalization is bursty (many calls in a session → warm cache),
   // and weekly tasks amortize the cache write against cheaper per-token rates.
-  const kb = await getKnowledgeBaseBlock();
+  // Voice profile takes precedence over the hardcoded BRAND_SYSTEM_PROMPT
+  // when the user has filled enough of their profile for the compiler to
+  // produce a valid prompt (see compileProfileToSystemPrompt — requires
+  // at least core_thesis + 2 stand_for entries). Otherwise we keep the
+  // legacy Roodjino voice as the cold-start default so a fresh install
+  // still generates sensible output before onboarding.
+  const [kb, voice] = await Promise.all([
+    getKnowledgeBaseBlock(),
+    getVoiceProfileBlock(),
+  ]);
+  const brandBlock = voice.text || BRAND_SYSTEM_PROMPT;
   const systemBlocks = [
-    { type: 'text', text: BRAND_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: brandBlock, cache_control: { type: 'ephemeral' } },
   ];
   if (kb.text) {
     systemBlocks.push({ type: 'text', text: kb.text, cache_control: { type: 'ephemeral' } });
@@ -410,8 +460,14 @@ module.exports = {
   generate,
   healthCheck,
   MODEL,
+  HAIKU_MODEL,
+  resolveModel,
+  getClient,
+  humanizeAnthropicError,
   invalidateKbCache,
   invalidateTopPerformersCache,
   invalidateRecentEditsCache,
+  invalidateVoiceProfileCache,
   getKnowledgeBaseBlock,
+  getVoiceProfileBlock,
 };

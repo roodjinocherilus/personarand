@@ -739,6 +739,23 @@ function buildUserMessage({ type, platform, topic, tone, length, funnel_layer, e
   return parts.join('\n');
 }
 
+/**
+ * Build the brand voice system prompt. If a structured voice profile is
+ * provided AND it compiles to a non-null string (passes the minimum-content
+ * gate in voiceProfile.js), use that. Otherwise fall back to the legacy
+ * Roodjino-shaped BRAND_SYSTEM_PROMPT so cold-start installs still produce
+ * sensible output.
+ *
+ * Lazy-required to avoid circular imports (voiceProfile.js doesn't import
+ * prompts.js today, but keeping the dependency one-way protects future edits).
+ */
+function buildBrandSystemPrompt(profile) {
+  if (!profile) return BRAND_SYSTEM_PROMPT;
+  const { compileProfileToSystemPrompt } = require('./voiceProfile');
+  const compiled = compileProfileToSystemPrompt(profile);
+  return compiled || BRAND_SYSTEM_PROMPT;
+}
+
 module.exports = {
   BRAND_SYSTEM_PROMPT,
   FORMAT_INSTRUCTIONS,
@@ -747,4 +764,5 @@ module.exports = {
   TONE_DESCRIPTORS,
   LENGTH_MODIFIERS,
   buildUserMessage,
+  buildBrandSystemPrompt,
 };
