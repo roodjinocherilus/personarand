@@ -253,6 +253,10 @@ export const api = {
   quickCapture: {
     classify: (text) => request('/api/quick-capture/classify', { method: 'POST', body: { text } }),
   },
+  crisis: {
+    assess: (situation) => request('/api/crisis/assess', { method: 'POST', body: { situation } }),
+    saveDraft: (payload) => request('/api/crisis/save-draft', { method: 'POST', body: payload }),
+  },
   voiceProfile: {
     get: () => request('/api/voice-profile'),
     save: (profile) => request('/api/voice-profile', { method: 'PUT', body: profile }),

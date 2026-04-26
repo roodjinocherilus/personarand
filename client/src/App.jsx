@@ -12,6 +12,7 @@ import BriefingView from './components/Briefing/BriefingView.jsx';
 import KnowledgeView from './components/Knowledge/KnowledgeView.jsx';
 import VoiceProfileView from './components/VoiceProfile/VoiceProfileView.jsx';
 import QuickCaptureFAB from './components/QuickCapture/QuickCaptureFAB.jsx';
+import CrisisView from './components/Crisis/CrisisView.jsx';
 import NewsletterView from './components/Newsletter/NewsletterView.jsx';
 import ProspectsView from './components/Prospects/ProspectsView.jsx';
 import AttributionView from './components/Attribution/AttributionView.jsx';
@@ -82,6 +83,7 @@ export default function App() {
             <Route path="/briefing" element={<BriefingView />} />
             <Route path="/knowledge" element={<KnowledgeView />} />
             <Route path="/voice-profile" element={<VoiceProfileView />} />
+            <Route path="/crisis" element={<CrisisView />} />
             <Route path="/review" element={<ReviewView />} />
             <Route path="/metrics" element={<MetricsForm />} />
           </Routes>
