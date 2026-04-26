@@ -56,6 +56,7 @@ app.use('/api/knowledge', require('./routes/knowledge'));
 app.use('/api/voice-profile', require('./routes/voiceProfile'));
 app.use('/api/quick-capture', require('./routes/quickCapture'));
 app.use('/api/crisis', require('./routes/crisis'));
+app.use('/api/reply-assistant', require('./routes/replyAssistant'));
 
 // Short URL for hosted signup pages
 app.get('/s/:id', (req, res) => res.redirect(302, `/api/signup/page/${req.params.id}`));

@@ -263,6 +263,9 @@ export const api = {
     assess: (situation) => request('/api/crisis/assess', { method: 'POST', body: { situation } }),
     saveDraft: (payload) => request('/api/crisis/save-draft', { method: 'POST', body: payload }),
   },
+  replyAssistant: {
+    draft: (payload) => request('/api/reply-assistant/draft', { method: 'POST', body: payload }),
+  },
   voiceProfile: {
     get: () => request('/api/voice-profile'),
     save: (profile) => request('/api/voice-profile', { method: 'PUT', body: profile }),

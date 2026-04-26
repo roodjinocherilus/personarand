@@ -13,6 +13,7 @@ const NAV = [
   { to: '/knowledge', label: 'Knowledge', hint: 'AI context base' },
   { to: '/voice-profile', label: 'Voice profile', hint: 'Brand voice document' },
   { to: '/crisis', label: 'Crisis mode', hint: 'Respond under pressure' },
+  { to: '/reply-assistant', label: 'Reply assistant', hint: 'Draft DMs and comments' },
   { to: '/review', label: 'Review', hint: 'Weekly reflection' },
   { to: '/metrics', label: 'Metrics', hint: 'Weekly performance' },
 ];
