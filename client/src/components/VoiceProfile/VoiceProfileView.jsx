@@ -48,6 +48,8 @@ export default function VoiceProfileView() {
   const [notice, setNotice] = useState(null);
   const [activeImportTab, setActiveImportTab] = useState(null); // 'ai' | 'corpus' | null
   const [compliancePacks, setCompliancePacks] = useState([]);
+  const [archetypes, setArchetypes] = useState([]);
+  const [archetypeBusy, setArchetypeBusy] = useState(null); // id being applied
 
   // Import-tab state
   const [aiPrompt, setAiPrompt] = useState('');
@@ -63,7 +65,8 @@ export default function VoiceProfileView() {
       api.voiceProfile.get().catch(() => null),
       api.voiceProfile.extractionPrompt().catch(() => ({ prompt: '' })),
       api.voiceProfile.compliancePacks().catch(() => ({ packs: [] })),
-    ]).then(([dims, prof, ext, packs]) => {
+      api.voiceProfile.archetypes().catch(() => ({ archetypes: [] })),
+    ]).then(([dims, prof, ext, packs, archs]) => {
       if (!mounted) return;
       setDimensions(dims.dimensions || []);
       if (prof) {
@@ -73,6 +76,7 @@ export default function VoiceProfileView() {
       }
       setAiPrompt(ext.prompt || '');
       setCompliancePacks(packs.packs || []);
+      setArchetypes(archs.archetypes || []);
       setLoading(false);
     });
     return () => { mounted = false; };
@@ -148,6 +152,24 @@ export default function VoiceProfileView() {
       setError(e.message || 'Parse failed');
     } finally {
       setAiBusy(false);
+    }
+  }
+
+  async function handleApplyArchetype(id) {
+    setError(null);
+    setNotice(null);
+    setArchetypeBusy(id);
+    try {
+      const r = await api.voiceProfile.archetype(id);
+      // Reuse mergeDraft so the user's existing edits aren't overwritten.
+      // Source mode tag becomes 'questionnaire' on first apply (it's a
+      // structured starter, not an extraction).
+      mergeDraft(r.starter, 'questionnaire');
+      setNotice(`Applied archetype "${r.label}". Review the form and save when you've customized it to fit.`);
+    } catch (e) {
+      setError(e.message || 'Failed to apply archetype');
+    } finally {
+      setArchetypeBusy(null);
     }
   }
 
@@ -363,6 +385,39 @@ export default function VoiceProfileView() {
           </div>
         )}
       </div>
+
+      {/* Archetype starter picker — shown when the profile is mostly empty
+          so a new user can populate 80% of the document in two clicks
+          and then customize. Hidden once the profile has substance. */}
+      {(profile.core_thesis || '').trim().length < 30 && archetypes.length > 0 && (
+        <div className="card-pad border-primary/30 bg-primary/5 space-y-3">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-primary">Cold-start shortcut</div>
+            <div className="text-sm font-semibold mt-1">Start from an archetype</div>
+            <div className="text-[11px] text-text-secondary mt-1 max-w-2xl leading-relaxed">
+              Pick the operator archetype that fits closest. The form pre-fills with a sharp starter voice — replace anything that doesn't match. Faster than typing every dimension; sharper than a blank page.
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {archetypes.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => handleApplyArchetype(a.id)}
+                disabled={!!archetypeBusy}
+                className="text-left rounded-md border border-border bg-card hover:border-primary p-3 transition-colors disabled:opacity-50"
+              >
+                <div className="flex items-center gap-2">
+                  <span aria-hidden className="text-base">{a.icon}</span>
+                  <div className="text-sm font-semibold">{a.label}</div>
+                  {archetypeBusy === a.id && <span className="text-[10px] text-primary ml-auto">applying…</span>}
+                </div>
+                <div className="text-[11px] text-text-secondary mt-1.5 leading-relaxed">{a.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Display name */}
       <div className="card-pad space-y-2">

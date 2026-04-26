@@ -33,6 +33,7 @@ const {
   invalidateVoiceProfileCache,
 } = require('../lib/anthropic');
 const { listPacks, getPack } = require('../lib/compliancePacks');
+const { listArchetypes, getArchetype } = require('../lib/voiceProfileArchetypes');
 
 const router = express.Router();
 
@@ -192,6 +193,21 @@ router.get('/extraction-prompt', (req, res) => {
 
 router.get('/compliance-packs', (req, res) => {
   res.json({ packs: listPacks() });
+});
+
+// -----------------------------------------------------------------------------
+// GET /api/voice-profile/archetypes        — list of starter archetypes
+// GET /api/voice-profile/archetypes/:id    — full archetype starter payload
+// -----------------------------------------------------------------------------
+
+router.get('/archetypes', (req, res) => {
+  res.json({ archetypes: listArchetypes() });
+});
+
+router.get('/archetypes/:id', (req, res) => {
+  const a = getArchetype(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Archetype not found' });
+  res.json({ id: a.id, label: a.label, icon: a.icon, description: a.description, starter: a.starter });
 });
 
 // -----------------------------------------------------------------------------
