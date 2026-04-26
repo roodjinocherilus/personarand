@@ -34,6 +34,8 @@ const {
 } = require('../lib/anthropic');
 const { listPacks, getPack } = require('../lib/compliancePacks');
 const { listArchetypes, getArchetype } = require('../lib/voiceProfileArchetypes');
+const { compileProfileToSystemPrompt } = require('../lib/voiceProfile');
+const { BRAND_SYSTEM_PROMPT } = require('../lib/prompts');
 
 const router = express.Router();
 
@@ -185,6 +187,48 @@ router.get('/dimensions', (req, res) => {
 
 router.get('/extraction-prompt', (req, res) => {
   res.json({ prompt: AI_EXTRACTION_PROMPT });
+});
+
+// -----------------------------------------------------------------------------
+// GET /api/voice-profile/compiled
+//
+// Show the user the EXACT system-prompt text their voice profile
+// compiles to. This is what the AI sees on every generation. Surfaces:
+//   - source: 'profile' (using the compiled voice document) or 'fallback'
+//             (legacy hardcoded prompt because the profile is too thin)
+//   - prompt: the full text
+//   - char_count: rough size signal for the user
+//
+// Why expose this: trust + debuggability. When a user disagrees with
+// the AI's output, the first question should be "is the prompt right?"
+// — and they need to see the prompt to answer that. Black-box is bad
+// for SaaS positioning.
+// -----------------------------------------------------------------------------
+
+router.get('/compiled', async (req, res, next) => {
+  try {
+    const profile = await readProfile();
+    let compiled = null;
+    let source = 'fallback';
+    if (profile) {
+      compiled = compileProfileToSystemPrompt(profile);
+      if (compiled) source = 'profile';
+    }
+    const text = compiled || BRAND_SYSTEM_PROMPT;
+    res.json({
+      source,
+      prompt: text,
+      char_count: text.length,
+      // Surface the cold-start fallback explicitly so the UI can warn
+      // when the user thinks they're using their voice but the gate
+      // hasn't opened yet (core_thesis < 24 chars or stand_for < 2).
+      fallback_reason: source === 'fallback'
+        ? (!profile?.core_thesis || profile.core_thesis.trim().length < 24
+            ? 'core_thesis is missing or too short (need 24+ chars)'
+            : 'stand_for needs at least 2 entries')
+        : null,
+    });
+  } catch (e) { next(e); }
 });
 
 // -----------------------------------------------------------------------------

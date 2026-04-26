@@ -273,6 +273,7 @@ export const api = {
     archetype: (id) => request(`/api/voice-profile/archetypes/${id}`),
     export: () => downloadFile('/api/voice-profile/export', 'voice-profile.json'),
     import: (payload) => request('/api/voice-profile/import', { method: 'POST', body: { payload } }),
+    compiled: () => request('/api/voice-profile/compiled'),
   },
   health: () => request('/api/health'),
   uploads: {

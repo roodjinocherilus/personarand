@@ -491,6 +491,12 @@ export default function VoiceProfileView() {
         ))}
       </div>
 
+      {/* Compiled prompt — show the user EXACTLY what the AI receives in
+          its system block. Collapsed by default to avoid overwhelming;
+          one click to inspect. This is the trust surface: black boxes
+          are bad for SaaS positioning. */}
+      <CompiledPromptInspector />
+
       {/* Backup — export current profile as JSON, import from a previous
           export. Import REPLACES the profile (it's restoration, not
           merging). Useful for: backup peace of mind, sharing voice
@@ -674,6 +680,86 @@ function DimensionEditor({ dim, value, score, onChange }) {
       {score?.note && (
         <div className="text-[11px] text-text-secondary border-l-2 border-border pl-2 italic">
           AI critic: {score.note}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompiledPromptInspector() {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function load() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.voiceProfile.compiled();
+      setData(r);
+    } catch (e) {
+      setErr(e.message || 'Could not load compiled prompt');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggle() {
+    if (!open && !data) load();
+    setOpen((v) => !v);
+  }
+
+  async function copy() {
+    if (!data?.prompt) return;
+    try {
+      await navigator.clipboard?.writeText(data.prompt);
+      setErr('Copied to clipboard.');
+    } catch {
+      setErr('Copy failed — select the text and copy manually.');
+    }
+  }
+
+  return (
+    <div className="card-pad space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-xs uppercase tracking-wider text-text-secondary">Transparency</div>
+          <div className="text-sm font-semibold mt-1">Compiled system prompt</div>
+          <div className="text-[11px] text-text-secondary mt-1 max-w-2xl leading-relaxed">
+            The exact text the AI receives in its system block on every generation. Inspect this when output disagrees with what you expected — almost always the prompt itself is the answer.
+          </div>
+        </div>
+        <button type="button" className="btn-ghost text-xs whitespace-nowrap" onClick={toggle}>
+          {open ? 'Hide' : 'Show compiled prompt'}
+        </button>
+      </div>
+
+      {open && (
+        <div className="border-t border-border pt-3 space-y-2">
+          {busy && <div className="text-xs text-text-secondary">Loading…</div>}
+          {data && (
+            <>
+              <div className="flex items-center gap-2 flex-wrap text-[11px] text-text-secondary">
+                <span className={`pill ${data.source === 'profile' ? 'border-success/40 text-success' : 'border-warning/40 text-warning'}`}>
+                  {data.source === 'profile' ? '✓ using your profile' : '⚠ using fallback prompt'}
+                </span>
+                <span className="font-mono">{data.char_count.toLocaleString()} chars · ≈{Math.ceil(data.char_count / 4).toLocaleString()} tokens</span>
+                {data.fallback_reason && (
+                  <span className="text-warning">Reason: {data.fallback_reason}</span>
+                )}
+                <button type="button" className="btn-ghost text-[11px] ml-auto" onClick={copy}>Copy</button>
+                <button type="button" className="btn-ghost text-[11px]" onClick={load}>↻ Refresh</button>
+              </div>
+              <textarea
+                readOnly
+                value={data.prompt}
+                onFocus={(e) => e.target.select()}
+                className="input-base text-[11px] font-mono leading-relaxed min-h-[300px] max-h-[60vh]"
+              />
+            </>
+          )}
+          {err && <div className="text-[11px] text-warning">{err}</div>}
         </div>
       )}
     </div>
