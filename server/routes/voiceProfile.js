@@ -74,6 +74,59 @@ async function readProfile() {
   return row;
 }
 
+/**
+ * Snapshot the current profile into voice_profile_versions before any
+ * write. Best-effort — if the versions table is missing (migration not
+ * applied yet) we silently skip so the underlying save still succeeds.
+ *
+ * Auto-prune to retain only the last 50 versions per profile so a user
+ * editing daily for a year doesn't accumulate 365 versions of nearly-
+ * identical content.
+ */
+async function snapshotPriorState(db, profileId, sourceAction = 'save') {
+  if (!profileId) return;
+  try {
+    const rows = await db.prepare(`SELECT * FROM voice_profiles WHERE id = ?`).get([profileId]);
+    if (!rows) return;
+    const snapshot = {
+      display_name: rows.display_name || null,
+      core_thesis: rows.core_thesis || null,
+      stand_for: rows.stand_for || [],
+      stand_against: rows.stand_against || [],
+      domains_of_authority: rows.domains_of_authority || [],
+      frameworks: rows.frameworks || [],
+      voice_laws: rows.voice_laws || [],
+      primary_audiences: rows.primary_audiences || [],
+      anti_voice: rows.anti_voice || [],
+      strategic_horizon: rows.strategic_horizon || null,
+      regional_context: rows.regional_context || null,
+      source_mode: rows.source_mode || null,
+      compliance_pack: rows.compliance_pack || null,
+    };
+    await db.prepare(`
+      INSERT INTO voice_profile_versions (profile_id, snapshot, source_action)
+      VALUES (?, ?::jsonb, ?)
+    `).run([profileId, JSON.stringify(snapshot), sourceAction]);
+
+    // Prune older versions, keep newest 50.
+    await db.prepare(`
+      DELETE FROM voice_profile_versions
+      WHERE profile_id = ?
+        AND id NOT IN (
+          SELECT id FROM voice_profile_versions
+          WHERE profile_id = ?
+          ORDER BY created_at DESC
+          LIMIT 50
+        )
+    `).run([profileId, profileId]);
+  } catch (err) {
+    // Migration probably hasn't run yet — fail silently. The save itself
+    // will still proceed; the user just doesn't get versioning until the
+    // migration is applied.
+    console.warn('[voice-profile] snapshot skipped:', err.message);
+  }
+}
+
 /** Strip the response of any markdown fencing and parse JSON. Tolerant. */
 function extractJson(text) {
   if (!text) return null;
@@ -436,6 +489,9 @@ router.post('/import', async (req, res, next) => {
 
     const db = openDb();
     const existing = await readProfile();
+    // Snapshot prior state before import (replace semantics). The user
+    // can roll back to pre-import via History if the import was wrong.
+    if (existing) await snapshotPriorState(db, existing.id, 'import');
     if (!existing) {
       await db.prepare(`
         INSERT INTO voice_profiles (
@@ -594,6 +650,10 @@ router.put('/', async (req, res, next) => {
     const db = openDb();
     const safe = sanitizeProfilePayload(req.body || {});
     const existing = await readProfile();
+
+    // Snapshot prior state before any update — best-effort, skipped on
+    // missing migration.
+    if (existing) await snapshotPriorState(db, existing.id, 'save');
 
     if (!existing) {
       // Defensive: should be impossible after migration, but if the bootstrap
@@ -784,6 +844,142 @@ router.post('/reset', async (req, res, next) => {
     `).run([]);
     invalidateVoiceProfileCache();
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// -----------------------------------------------------------------------------
+// GET /api/voice-profile/history  — list past versions
+//
+// Returns up to 50 most-recent versions for the current profile.
+// Each row includes timestamp + source_action + a tiny preview field
+// (first 80 chars of the snapshot's core_thesis) so the user can
+// recognize "the version before I tried that AI extraction".
+//
+// Empty array (not 404) when no history exists yet — the user can
+// still hit the endpoint without erroring.
+// -----------------------------------------------------------------------------
+
+router.get('/history', async (req, res, next) => {
+  try {
+    const db = openDb();
+    const profile = await readProfile();
+    if (!profile) return res.json({ versions: [] });
+
+    let rows = [];
+    try {
+      rows = await db.prepare(`
+        SELECT id, source_action, created_at, snapshot
+        FROM voice_profile_versions
+        WHERE profile_id = ?
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).all([profile.id]);
+    } catch (err) {
+      // Migration not applied yet — return empty rather than 500.
+      console.warn('[voice-profile] history fetch failed:', err.message);
+      return res.json({ versions: [], migration_pending: true });
+    }
+
+    const versions = (rows || []).map((r) => {
+      // Snapshot is JSONB. Some pg drivers return strings.
+      let snap = r.snapshot;
+      if (typeof snap === 'string') {
+        try { snap = JSON.parse(snap); } catch { snap = {}; }
+      }
+      return {
+        id: r.id,
+        source_action: r.source_action || 'save',
+        created_at: r.created_at,
+        preview: {
+          display_name: snap?.display_name || null,
+          core_thesis: snap?.core_thesis ? String(snap.core_thesis).slice(0, 200) : null,
+          stand_for_count: Array.isArray(snap?.stand_for) ? snap.stand_for.length : 0,
+          frameworks_count: Array.isArray(snap?.frameworks) ? snap.frameworks.length : 0,
+          compliance_pack: snap?.compliance_pack || null,
+        },
+      };
+    });
+    res.json({ versions });
+  } catch (e) { next(e); }
+});
+
+// -----------------------------------------------------------------------------
+// POST /api/voice-profile/restore/:version_id  — roll back to a snapshot
+//
+// Snapshots the current state first (with source_action = 'restore'),
+// then replaces the active profile columns with the chosen snapshot.
+// The cache invalidates so the next generation uses the restored voice.
+// -----------------------------------------------------------------------------
+
+router.post('/restore/:version_id', async (req, res, next) => {
+  try {
+    const db = openDb();
+    const profile = await readProfile();
+    if (!profile) return res.status(400).json({ error: 'No profile to restore.' });
+
+    let row;
+    try {
+      row = await db.prepare(`
+        SELECT id, snapshot FROM voice_profile_versions
+        WHERE id = ? AND profile_id = ?
+      `).get([req.params.version_id, profile.id]);
+    } catch (err) {
+      return res.status(503).json({ error: 'History table not available — apply migration 014 first.' });
+    }
+    if (!row) return res.status(404).json({ error: 'Version not found.' });
+
+    let snap = row.snapshot;
+    if (typeof snap === 'string') {
+      try { snap = JSON.parse(snap); } catch { snap = null; }
+    }
+    if (!snap) return res.status(400).json({ error: 'Snapshot is corrupted; cannot restore.' });
+
+    // Snapshot the current state before overwriting it. This is what
+    // makes restore reversible: the user can always undo a restore by
+    // restoring the snapshot just created.
+    await snapshotPriorState(db, profile.id, 'restore');
+
+    // Apply the snapshot to the active row.
+    await db.prepare(`
+      UPDATE voice_profiles SET
+        display_name = ?,
+        core_thesis = ?,
+        stand_for = ?::jsonb,
+        stand_against = ?::jsonb,
+        domains_of_authority = ?::jsonb,
+        frameworks = ?::jsonb,
+        voice_laws = ?::jsonb,
+        primary_audiences = ?::jsonb,
+        anti_voice = ?::jsonb,
+        strategic_horizon = ?,
+        regional_context = ?,
+        source_mode = ?,
+        compliance_pack = ?,
+        score_total = NULL,
+        score_breakdown = NULL,
+        score_at = NULL,
+        updated_at = NOW()
+      WHERE is_primary = TRUE
+    `).run([
+      snap.display_name ?? null,
+      snap.core_thesis ?? null,
+      JSON.stringify(snap.stand_for || []),
+      JSON.stringify(snap.stand_against || []),
+      JSON.stringify(snap.domains_of_authority || []),
+      JSON.stringify(snap.frameworks || []),
+      JSON.stringify(snap.voice_laws || []),
+      JSON.stringify(snap.primary_audiences || []),
+      JSON.stringify(snap.anti_voice || []),
+      snap.strategic_horizon ?? null,
+      snap.regional_context ?? null,
+      snap.source_mode ?? 'mixed',
+      snap.compliance_pack ?? null,
+    ]);
+
+    invalidateVoiceProfileCache();
+    const restored = await readProfile();
+    const localScoreFn = require('../lib/voiceProfile').localScore;
+    res.json({ profile: restored, local_score: localScoreFn(restored), cached_score: null });
   } catch (e) { next(e); }
 });
 

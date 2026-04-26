@@ -52,6 +52,7 @@ export default function VoiceProfileView() {
   const [archetypeBusy, setArchetypeBusy] = useState(null); // id being applied
   const [importBusy, setImportBusy] = useState(false);
   const importInputRef = useRef(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Import-tab state
   const [aiPrompt, setAiPrompt] = useState('');
@@ -521,6 +522,14 @@ export default function VoiceProfileView() {
           >
             {importBusy ? 'Importing…' : '⬆ Import profile (JSON)'}
           </button>
+          <button
+            type="button"
+            className="btn-ghost text-xs"
+            onClick={() => setHistoryOpen(true)}
+            title="Browse past versions of your profile and restore any snapshot — every save is captured automatically (last 50)"
+          >
+            📜 History
+          </button>
           <input
             ref={importInputRef}
             type="file"
@@ -530,6 +539,19 @@ export default function VoiceProfileView() {
           />
         </div>
       </div>
+
+      {historyOpen && (
+        <HistoryModal
+          onClose={() => setHistoryOpen(false)}
+          onRestored={(restored) => {
+            setProfile(restored.profile);
+            setLocalScore(restored.local_score);
+            setCachedScore(restored.cached_score);
+            setHistoryOpen(false);
+            setNotice('Restored a previous version. The next generation will use it.');
+          }}
+        />
+      )}
 
       {/* Sticky save bar */}
       <div className="sticky bottom-3 z-10 flex justify-end">
@@ -781,6 +803,106 @@ function SuggestionCard({ suggestion, kind, pairKeys, onApply }) {
       <div className="text-xs text-text-primary leading-relaxed whitespace-pre-wrap">{display}</div>
       <div className="text-[10px] text-primary mt-1">{kind === 'text' ? 'Replace value →' : 'Append →'}</div>
     </button>
+  );
+}
+
+/**
+ * History modal — list past voice profile versions with restore buttons.
+ *
+ * Shows the last 50 snapshots, newest first. Each row reveals enough of
+ * the snapshot (display_name + first 200 chars of core_thesis +
+ * counts) for the user to recognize "the version before I tried that
+ * archetype" without showing the full snapshot's content.
+ *
+ * Restore is destructive in the sense that it overwrites the active
+ * profile — but it ALWAYS snapshots the prior state first, so it's
+ * itself reversible. The user can always undo a restore by restoring
+ * the snapshot just created.
+ */
+function HistoryModal({ onClose, onRestored }) {
+  const [versions, setVersions] = useState(null);
+  const [error, setError] = useState(null);
+  const [restoringId, setRestoringId] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    api.voiceProfile.history()
+      .then((r) => { if (mounted) setVersions(r.versions || []); })
+      .catch((e) => { if (mounted) setError(e.message || 'Could not load history'); });
+    return () => { mounted = false; };
+  }, []);
+
+  async function restore(versionId) {
+    if (!window.confirm('Restoring will overwrite your current profile. The current state will be saved as a new history version (you can roll back). Continue?')) return;
+    setRestoringId(versionId);
+    setError(null);
+    try {
+      const r = await api.voiceProfile.restoreVersion(versionId);
+      onRestored?.(r);
+    } catch (e) {
+      setError(e.message || 'Restore failed');
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3" onClick={onClose}>
+      <div className="card-pad bg-card border border-border w-full max-w-3xl max-h-[90vh] overflow-y-auto space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-widest text-text-secondary">History</div>
+            <div className="text-lg font-semibold mt-1">Voice profile versions</div>
+            <div className="text-[11px] text-text-secondary mt-1 leading-relaxed max-w-2xl">
+              The last 50 snapshots of your profile. Every save / import / archetype-apply / restore captures the prior state automatically. Restore is reversible — the act of restoring also creates a new snapshot.
+            </div>
+          </div>
+          <button className="btn-ghost" onClick={onClose}>✕</button>
+        </div>
+
+        {error && <div className="card-pad border-danger/40 bg-danger/5 text-xs text-danger">{error}</div>}
+        {versions == null && !error && <div className="text-xs text-text-secondary">Loading…</div>}
+        {versions && versions.length === 0 && (
+          <div className="text-xs text-text-secondary italic">No versions yet — every save from now on creates one. (If you applied migration 014 just now, this state is the starting point.)</div>
+        )}
+
+        {versions && versions.length > 0 && (
+          <div className="space-y-2">
+            {versions.map((v) => (
+              <div key={v.id} className="rounded-md border border-border bg-[#161616] p-3">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="text-xs flex items-center gap-2">
+                      <span className="font-mono text-text-secondary">#{v.id}</span>
+                      <span className="pill border-border text-text-secondary text-[10px]">{v.source_action}</span>
+                      <span className="text-text-secondary">{new Date(v.created_at).toLocaleString()}</span>
+                    </div>
+                    {v.preview?.display_name && (
+                      <div className="text-[11px] text-text-secondary mt-1">As: <span className="text-text-primary">{v.preview.display_name}</span></div>
+                    )}
+                    {v.preview?.core_thesis && (
+                      <div className="text-[12px] text-text-primary/80 italic mt-1 line-clamp-2 leading-relaxed">"{v.preview.core_thesis}"</div>
+                    )}
+                    <div className="text-[10px] text-text-secondary mt-1 font-mono">
+                      {v.preview?.stand_for_count} stand_for · {v.preview?.frameworks_count} frameworks
+                      {v.preview?.compliance_pack && ` · pack: ${v.preview.compliance_pack}`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-ghost text-xs whitespace-nowrap"
+                    onClick={() => restore(v.id)}
+                    disabled={!!restoringId}
+                  >
+                    {restoringId === v.id ? 'Restoring…' : 'Restore →'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

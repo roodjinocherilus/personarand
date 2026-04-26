@@ -288,6 +288,8 @@ export const api = {
     sharpenDimension: (dimension) => request('/api/voice-profile/sharpen-dimension', {
       method: 'POST', body: { dimension },
     }),
+    history: () => request('/api/voice-profile/history'),
+    restoreVersion: (versionId) => request(`/api/voice-profile/restore/${versionId}`, { method: 'POST', body: {} }),
   },
   health: () => request('/api/health'),
   uploads: {
